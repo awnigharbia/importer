@@ -2,10 +2,14 @@ import fs from 'fs';
 import path from 'path';
 import { nanoid } from 'nanoid';
 import axios from 'axios';
+import { exec } from 'child_process';
+import { promisify } from 'util';
 import { env } from '../config/env';
 import { logger } from '../utils/logger';
 import { parseGoogleDriveUrl } from '../utils/googleDrive';
 import { retry } from '../utils/retry';
+
+const execAsync = promisify(exec);
 
 export interface GoogleDriveDownloadOptions {
   url: string;
@@ -85,7 +89,18 @@ export class GoogleDriveDownloader {
     onProgress?: (progress: DownloadProgress) => void
   ): Promise<DownloadResult> {
     try {
-      // Get the direct download URL using our custom method
+      // Try using gdown first if available
+      const gdownAvailable = await this.checkGdownAvailable();
+      
+      if (gdownAvailable) {
+        logger.info('Using gdown for Google Drive download', { fileId });
+        const result = await this.downloadWithGdown(fileId, filePath);
+        if (result) {
+          return result;
+        }
+      }
+
+      // Fallback to custom method
       logger.info('Getting direct download URL from Google Drive', { fileId });
       const directDownloadUrl = await this.getGoogleDriveDirectUrl(fileId);
       
@@ -198,6 +213,78 @@ export class GoogleDriveDownloader {
       }
       
       throw new Error(`Google Drive download failed: ${errorMessage}`);
+    }
+  }
+
+  private async checkGdownAvailable(): Promise<boolean> {
+    try {
+      await execAsync('which gdown');
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async downloadWithGdown(fileId: string, filePath: string): Promise<DownloadResult | null> {
+    try {
+      const driveUrl = `https://drive.google.com/uc?id=${fileId}`;
+      
+      // Use gdown with quiet mode and fuzzy option for better handling
+      const command = `gdown "${driveUrl}" -O "${filePath}" --quiet --fuzzy`;
+      
+      logger.info('Executing gdown command', { command: command.substring(0, 100) + '...' });
+      
+      const { stdout, stderr } = await execAsync(command, {
+        timeout: env.DOWNLOAD_TIMEOUT_MS,
+        maxBuffer: 1024 * 1024 * 10 // 10MB buffer
+      });
+
+      if (stderr && !stderr.includes('Downloading')) {
+        logger.warn('gdown stderr output', { stderr });
+      }
+
+      // Check if file was downloaded successfully
+      if (!fs.existsSync(filePath)) {
+        logger.error('gdown download failed - file not found');
+        return null;
+      }
+
+      const stats = fs.statSync(filePath);
+      const fileName = path.basename(filePath);
+
+      // Validate file
+      if (stats.size === 0) {
+        fs.unlinkSync(filePath);
+        logger.error('gdown downloaded empty file');
+        return null;
+      }
+
+      // Check file size limit
+      if (stats.size > env.MAX_FILE_SIZE_MB * 1024 * 1024) {
+        fs.unlinkSync(filePath);
+        throw new Error(`File size exceeds limit of ${env.MAX_FILE_SIZE_MB}MB`);
+      }
+
+      logger.info('gdown download successful', {
+        fileId,
+        filePath,
+        fileSize: stats.size,
+        fileName,
+      });
+
+      const ext = path.extname(fileName).toLowerCase();
+      return {
+        filePath,
+        fileName,
+        fileSize: stats.size,
+        mimeType: this.getMimeTypeFromExtension(ext),
+      };
+    } catch (error) {
+      logger.error('gdown download failed', { error });
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+      return null;
     }
   }
 
