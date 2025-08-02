@@ -3,8 +3,8 @@ import { OAuth2Client } from 'google-auth-library';
 import fs from 'fs';
 import path from 'path';
 import { Readable } from 'stream';
-import { GoogleDriveInfo, parseGoogleDriveUrl } from '../utils/googleDrive';
-import logger from '../utils/logger';
+import { parseGoogleDriveUrl } from '../utils/googleDrive';
+import { logger } from '../utils/logger';
 
 export interface GoogleDriveAuth {
   clientId: string;

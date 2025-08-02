@@ -16,7 +16,11 @@ export async function processImportJob(
 ): Promise<ImportJobResult> {
   const { url, type, fileName } = job.data;
   const downloader = new Downloader();
-  const googleDriveDownloader = new GoogleDriveDownloader();
+  const googleDriveDownloader = new GoogleDriveDownloader({
+    clientId: env.GOOGLE_CLIENT_ID!,
+    clientSecret: env.GOOGLE_CLIENT_SECRET!,
+    refreshToken: env.GOOGLE_REFRESH_TOKEN!
+  });
   const bunnyStorage = new BunnyStorage();
   const recoveryService = getJobRecoveryService();
   const memoryMonitor = getMemoryMonitor();
@@ -40,16 +44,9 @@ export async function processImportJob(
 
     if (type === 'gdrive') {
       // Use Google Drive API for Google Drive files
-      downloadResult = await googleDriveDownloader.download({
-        url,
-        fileName: fileName || undefined,
-        onProgress: async (progress) => {
-          await job.updateProgress({
-            stage: 'downloading',
-            percentage: progress.percentage,
-            message: `Downloading from Google Drive: ${progress.percentage}%`,
-          } as ImportJobProgress);
-        },
+      downloadResult = await googleDriveDownloader.downloadFile(url, {
+        ...(fileName && { fileName }),
+        outputPath: env.TEMP_DIR || '/tmp'
       });
     } else {
       // Use regular downloader for direct URLs
@@ -94,7 +91,7 @@ export async function processImportJob(
     } as ImportJobProgress);
 
     const uploadResult = await bunnyStorage.upload({
-      filePath: tempFilePath,
+      filePath: tempFilePath!,
       fileName: uniqueFileName,
       onProgress: async (progress) => {
         const progressData = {
@@ -126,9 +123,12 @@ export async function processImportJob(
 
     // Clean up temporary file
     if (type === 'gdrive') {
-      googleDriveDownloader.cleanupFile(tempFilePath);
+      // Clean up temporary file
+      if (require('fs').existsSync(tempFilePath!)) {
+        require('fs').unlinkSync(tempFilePath!);
+      }
     } else {
-      downloader.cleanupFile(tempFilePath);
+      downloader.cleanupFile(tempFilePath!);
     }
 
     const result: ImportJobResult = {
@@ -160,7 +160,10 @@ export async function processImportJob(
     // Clean up on failure
     if (tempFilePath) {
       if (type === 'gdrive') {
-        googleDriveDownloader.cleanupFile(tempFilePath);
+        // Clean up temporary file
+        if (require('fs').existsSync(tempFilePath!)) {
+          require('fs').unlinkSync(tempFilePath!);
+        }
       } else {
         downloader.cleanupFile(tempFilePath);
       }

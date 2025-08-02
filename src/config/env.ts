@@ -49,6 +49,9 @@ const envSchema = z.object({
 
   // Google API settings
   GOOGLE_API_KEY: z.string().optional(),
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_SECRET: z.string().optional(),
+  GOOGLE_REFRESH_TOKEN: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
