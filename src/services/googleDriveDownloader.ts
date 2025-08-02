@@ -1,16 +1,9 @@
-import { google } from 'googleapis';
-import { OAuth2Client } from 'google-auth-library';
-import fs from 'fs';
-import path from 'path';
+const { google } = require('googleapis');
+const fs = require('fs');
+const path = require('path');
 import { Readable } from 'stream';
 import { parseGoogleDriveUrl } from '../utils/googleDrive';
 import { logger } from '../utils/logger';
-
-export interface GoogleDriveAuth {
-  clientId: string;
-  clientSecret: string;
-  refreshToken: string;
-}
 
 export interface DownloadOptions {
   outputPath?: string;
@@ -26,18 +19,18 @@ export interface DownloadResult {
 }
 
 export class GoogleDriveDownloader {
-  private auth: OAuth2Client;
+  private auth: any;
   private drive: any;
 
-  constructor(authConfig: GoogleDriveAuth) {
-    this.auth = new OAuth2Client(
-      authConfig.clientId,
-      authConfig.clientSecret,
-      'urn:ietf:wg:oauth:2.0:oob'
-    );
+  constructor() {
+    const key = require('../../../google-key.json');
 
-    this.auth.setCredentials({
-      refresh_token: authConfig.refreshToken,
+    this.auth = new google.auth.GoogleAuth({
+      credentials: {
+        client_email: key.client_email,
+        private_key: key.private_key,
+      },
+      scopes: ['https://www.googleapis.com/auth/drive'],
     });
 
     this.drive = google.drive({ version: 'v3', auth: this.auth });
