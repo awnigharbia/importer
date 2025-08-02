@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Importer Service - API Documentation</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1, h2, h3 {
+            color: #2c3e50;
+        }
+        h1 {
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+        }
+        .endpoint {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        .method {
+            display: inline-block;
+            padding: 5px 10px;
+            border-radius: 3px;
+            font-weight: bold;
+            color: white;
+            margin-right: 10px;
+        }
+        .method.get { background-color: #28a745; }
+        .method.post { background-color: #007bff; }
+        .method.delete { background-color: #dc3545; }
+        .path {
+            font-family: 'Courier New', monospace;
+            font-size: 16px;
+        }
+        code {
+            background-color: #e9ecef;
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+        }
+        pre {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 15px;
+            overflow-x: auto;
+        }
+        .button {
+            display: inline-block;
+            padding: 10px 20px;
+            background-color: #3498db;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            margin: 10px 5px;
+        }
+        .button:hover {
+            background-color: #2980b9;
+        }
+        .status {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .status.active { background-color: #ffc107; color: #000; }
+        .status.completed { background-color: #28a745; color: white; }
+        .status.failed { background-color: #dc3545; color: white; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎬 Importer Service</h1>
+        <p>A microservice for importing videos from various sources and uploading them to Bunny Storage.</p>
+        
+        <div style="margin: 30px 0;">
+            <a href="/dashboard" class="button">📊 View Job Dashboard</a>
+            <a href="/health" class="button">🏥 Health Check</a>
+        </div>
+
+        <h2>API Endpoints</h2>
+
+        <div class="endpoint">
+            <h3><span class="method post">POST</span> <span class="path">/api/import</span></h3>
+            <p>Start a new import job to download a video and upload it to Bunny Storage.</p>
+            <h4>Request Body:</h4>
+            <pre>{
+  "url": "https://drive.google.com/file/d/ABC123/view",
+  "type": "gdrive" | "direct",  // Optional, auto-detected if not provided
+  "fileName": "my-video.mp4"    // Optional
+}</pre>
+            <h4>Response:</h4>
+            <pre>{
+  "success": true,
+  "data": {
+    "jobId": "abc123",
+    "requestId": "req_xyz789",
+    "status": "waiting",
+    "url": "https://drive.google.com/file/d/ABC123/view",
+    "type": "gdrive"
+  }
+}</pre>
+        </div>
+
+        <div class="endpoint">
+            <h3><span class="method get">GET</span> <span class="path">/api/jobs</span></h3>
+            <p>List all jobs with pagination and filtering options.</p>
+            <h4>Query Parameters:</h4>
+            <ul>
+                <li><code>page</code> - Page number (default: 1)</li>
+                <li><code>limit</code> - Items per page (default: 20)</li>
+                <li><code>status</code> - Filter by status: completed, failed, active, waiting, delayed</li>
+            </ul>
+            <h4>Response:</h4>
+            <pre>{
+  "success": true,
+  "data": {
+    "jobs": [...],
+    "pagination": {
+      "page": 1,
+      "limit": 20,
+      "total": 100,
+      "totalPages": 5
+    },
+    "counts": {
+      "completed": 80,
+      "failed": 5,
+      "active": 2,
+      "waiting": 13,
+      "delayed": 0
+    }
+  }
+}</pre>
+        </div>
+
+        <div class="endpoint">
+            <h3><span class="method get">GET</span> <span class="path">/api/jobs/:id</span></h3>
+            <p>Get detailed information about a specific job.</p>
+            <h4>Response:</h4>
+            <pre>{
+  "success": true,
+  "data": {
+    "id": "abc123",
+    "data": {...},
+    "status": "completed",
+    "progress": {
+      "stage": "uploading",
+      "percentage": 100,
+      "message": "Upload complete"
+    },
+    "returnValue": {
+      "success": true,
+      "cdnUrl": "https://cdn.example.com/video.mp4",
+      "fileName": "video.mp4",
+      "fileSize": 104857600
+    },
+    "attemptsMade": 1,
+    "timestamp": 1234567890000
+  }
+}</pre>
+        </div>
+
+        <div class="endpoint">
+            <h3><span class="method post">POST</span> <span class="path">/api/jobs/:id/retry</span></h3>
+            <p>Manually retry a failed job.</p>
+            <h4>Response:</h4>
+            <pre>{
+  "success": true,
+  "message": "Job retry requested successfully"
+}</pre>
+        </div>
+
+        <div class="endpoint">
+            <h3><span class="method delete">DELETE</span> <span class="path">/api/jobs/:id</span></h3>
+            <p>Delete a job from the queue.</p>
+            <h4>Response:</h4>
+            <pre>{
+  "success": true,
+  "message": "Job deleted successfully"
+}</pre>
+        </div>
+
+        <h2>TUS Upload</h2>
+        <p>The service supports resumable uploads using the TUS protocol at <code>/uploads</code>.</p>
+        <p>Use any TUS client to upload files directly to the service.</p>
+
+        <h2>Environment Variables</h2>
+        <p>Configure the service using the following environment variables:</p>
+        <pre>
+# Bunny Storage
+BUNNY_STORAGE_ZONE=your-zone
+BUNNY_ACCESS_KEY=your-access-key
+BUNNY_CDN_URL=https://your-cdn.b-cdn.net
+
+# Redis
+REDIS_URL=redis://localhost:6379
+
+# Sentry (optional)
+SENTRY_DSN=your-sentry-dsn
+
+# Telegram (optional)
+TELEGRAM_BOT_TOKEN=your-bot-token
+TELEGRAM_CHAT_ID=your-chat-id
+
+# Server
+PORT=3000
+TUS_PATH=/uploads
+TEMP_DIR=./temp
+        </pre>
+
+        <h2>Features</h2>
+        <ul>
+            <li>✅ Google Drive public link support</li>
+            <li>✅ Direct URL downloads</li>
+            <li>✅ Resumable uploads via TUS protocol</li>
+            <li>✅ Job queue with retry mechanism</li>
+            <li>✅ Real-time progress tracking</li>
+            <li>✅ Web dashboard for job monitoring</li>
+            <li>✅ Telegram notifications</li>
+            <li>✅ Sentry error tracking</li>
+            <li>✅ Streaming uploads to prevent memory issues</li>
+        </ul>
+    </div>
+</body>
+</html>
