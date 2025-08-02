@@ -234,7 +234,7 @@ export class GoogleDriveDownloader {
       
       logger.info('Executing gdown command', { command: command.substring(0, 100) + '...' });
       
-      const { stdout, stderr } = await execAsync(command, {
+      const { stderr } = await execAsync(command, {
         timeout: env.DOWNLOAD_TIMEOUT_MS,
         maxBuffer: 1024 * 1024 * 10 // 10MB buffer
       });
