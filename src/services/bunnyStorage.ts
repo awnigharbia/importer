@@ -31,7 +31,20 @@ export class BunnyStorage {
 
   constructor() {
     this.storageUrl = `https://storage.bunnycdn.com/${env.BUNNY_STORAGE_ZONE}`;
-    this.cdnUrl = env.BUNNY_CDN_URL;
+    this.cdnUrl = this.validateCdnUrl(env.BUNNY_CDN_URL);
+  }
+
+  private validateCdnUrl(url: string): string {
+    // Remove trailing slash
+    let cleanUrl = url.replace(/\/$/, '');
+    
+    // Ensure it starts with http:// or https://
+    if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
+      cleanUrl = `https://${cleanUrl}`;
+    }
+    
+    logger.debug('CDN URL validated', { original: url, validated: cleanUrl });
+    return cleanUrl;
   }
 
   async upload(options: UploadOptions): Promise<UploadResult> {
@@ -57,12 +70,20 @@ export class BunnyStorage {
         }
       );
 
+      // Generate clean CDN URL
       const cdnUrl = `${this.cdnUrl}/${fileName}`;
 
+      // Verify CDN URL is accessible (optional check)
       logger.info('File uploaded successfully to Bunny Storage', {
         fileName,
         fileSize,
+        storageUrl: uploadUrl,
         cdnUrl,
+        cdnUrlComponents: {
+          base: this.cdnUrl,
+          fileName,
+          full: cdnUrl
+        }
       });
 
       return {
@@ -181,6 +202,37 @@ export class BunnyStorage {
     } catch (error) {
       logger.error('Failed to check file existence', {
         fileName,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return false;
+    }
+  }
+
+  async verifyCdnAccess(fileName: string): Promise<boolean> {
+    const cdnUrl = `${this.cdnUrl}/${fileName}`;
+    
+    try {
+      const response = await axios({
+        method: 'HEAD',
+        url: cdnUrl,
+        timeout: 10000, // 10 second timeout
+        validateStatus: (status) => status === 200 || status === 404,
+      });
+
+      const isAccessible = response.status === 200;
+      
+      logger.info('CDN access verification', {
+        fileName,
+        cdnUrl,
+        accessible: isAccessible,
+        status: response.status
+      });
+
+      return isAccessible;
+    } catch (error) {
+      logger.warn('CDN access verification failed', {
+        fileName,
+        cdnUrl,
         error: error instanceof Error ? error.message : String(error),
       });
       return false;

@@ -101,7 +101,8 @@ export class ChunkedUploader {
       throw new Error(`Upload failed with status: ${response.status}`);
     }
 
-    const cdnUrl = `${env.BUNNY_CDN_URL}/${fileName}`;
+    // Ensure CDN URL doesn't have double slashes
+    const cdnUrl = `${env.BUNNY_CDN_URL.replace(/\/$/, '')}/${fileName}`;
     
     return {
       cdnUrl,
@@ -148,7 +149,8 @@ export class ChunkedUploader {
 
     // For chunked uploads, we need to concatenate chunks on Bunny Storage
     // This is a simplified approach - in production you'd use proper multipart upload API
-    const cdnUrl = `${env.BUNNY_CDN_URL}/${fileName}`;
+    // Ensure CDN URL doesn't have double slashes
+    const cdnUrl = `${env.BUNNY_CDN_URL.replace(/\/$/, '')}/${fileName}`;
     
     logger.info('Chunked upload completed', {
       fileName,

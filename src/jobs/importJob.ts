@@ -126,6 +126,21 @@ export async function processImportJob(
           await recoveryService.updateJobProgress(job.id!, progressData, tempFiles);
         },
       });
+
+      // Verify CDN URL is accessible
+      setTimeout(async () => {
+        try {
+          const isAccessible = await bunnyStorage.verifyCdnAccess(uniqueFileName);
+          if (!isAccessible) {
+            logger.warn('CDN URL verification failed, file may not be immediately accessible', {
+              fileName: uniqueFileName,
+              cdnUrl: uploadResult.cdnUrl
+            });
+          }
+        } catch (error) {
+          logger.warn('CDN verification error', { error });
+        }
+      }, 5000); // Wait 5 seconds for CDN propagation
     }
 
     // Clean up temporary file
