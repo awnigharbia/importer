@@ -2,7 +2,6 @@ import fs from 'fs';
 import path from 'path';
 import { nanoid } from 'nanoid';
 import axios from 'axios';
-import { getDownloadLinkFromID } from '@abrifq/google-drive-downloader';
 import { env } from '../config/env';
 import { logger } from '../utils/logger';
 import { parseGoogleDriveUrl } from '../utils/googleDrive';
@@ -86,9 +85,9 @@ export class GoogleDriveDownloader {
     onProgress?: (progress: DownloadProgress) => void
   ): Promise<DownloadResult> {
     try {
-      // Get the direct download URL using @abrifq/google-drive-downloader
+      // Get the direct download URL using our custom method
       logger.info('Getting direct download URL from Google Drive', { fileId });
-      const directDownloadUrl = await getDownloadLinkFromID(fileId);
+      const directDownloadUrl = await this.getGoogleDriveDirectUrl(fileId);
       
       if (!directDownloadUrl) {
         throw new Error('Could not get direct download URL from Google Drive. File may be private or deleted.');
@@ -199,6 +198,60 @@ export class GoogleDriveDownloader {
       }
       
       throw new Error(`Google Drive download failed: ${errorMessage}`);
+    }
+  }
+
+  private async getGoogleDriveDirectUrl(fileId: string): Promise<string | null> {
+    try {
+      // First try the direct download URL
+      const downloadUrl = `https://drive.google.com/uc?export=download&id=${fileId}`;
+      
+      // Make a HEAD request first to check if we get redirected
+      const headResponse = await axios({
+        method: 'HEAD',
+        url: downloadUrl,
+        maxRedirects: 0,
+        validateStatus: (status) => status < 400,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+      });
+
+      // If we get a content-length header, the direct URL works
+      if (headResponse.headers['content-length']) {
+        return downloadUrl;
+      }
+
+      // If direct URL doesn't work, try to get the confirmation URL
+      const response = await axios({
+        method: 'GET',
+        url: downloadUrl,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+      });
+
+      // Look for the confirmation download link in the HTML response
+      const html = response.data;
+      
+      // Check for the download confirmation link
+      const confirmMatch = html.match(/href="([^"]*&amp;confirm=[^"]*)"/);
+      if (confirmMatch) {
+        return confirmMatch[1].replace(/&amp;/g, '&');
+      }
+
+      // Alternative pattern for the download link
+      const downloadMatch = html.match(/href="(\/uc\?export=download[^"]*)"/);
+      if (downloadMatch) {
+        return `https://drive.google.com${downloadMatch[1].replace(/&amp;/g, '&')}`;
+      }
+
+      // Last resort: try the original URL with &confirm=t
+      return `${downloadUrl}&confirm=t`;
+      
+    } catch (error) {
+      logger.error('Failed to get Google Drive direct URL', { fileId, error });
+      return null;
     }
   }
 
