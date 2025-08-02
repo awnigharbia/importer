@@ -5,9 +5,11 @@ import { ImportJobData, ImportJobResult, ImportJobProgress } from '../queues/imp
 import { Downloader } from '../services/downloader';
 import { GoogleDriveDownloader } from '../services/googleDriveDownloader';
 import { BunnyStorage } from '../services/bunnyStorage';
+import { ChunkedUploader } from '../services/chunkedUploader';
 import { sendTelegramNotification } from '../services/telegram';
 import { logger } from '../utils/logger';
 import { env } from '../config/env';
+import { getJobRecoveryService } from '../services/jobRecovery';
 
 export async function processImportJob(
   job: Job<ImportJobData, ImportJobResult>
@@ -16,11 +18,16 @@ export async function processImportJob(
   const downloader = new Downloader();
   const googleDriveDownloader = new GoogleDriveDownloader();
   const bunnyStorage = new BunnyStorage();
+  const chunkedUploader = new ChunkedUploader();
+  const recoveryService = getJobRecoveryService();
 
   let downloadResult;
   let tempFilePath: string | null = null;
+  let tempFiles: string[] = [];
 
   try {
+    // Track job for recovery
+    await recoveryService.trackJob(job, tempFiles);
     // Download stage
     await job.updateProgress({
       stage: 'downloading',
@@ -58,30 +65,68 @@ export async function processImportJob(
     }
 
     tempFilePath = downloadResult.filePath;
+    tempFiles = [tempFilePath]; // Track temp files for cleanup
+    
+    // Update recovery state with download progress
+    await recoveryService.updateJobProgress(job.id!, {
+      stage: 'downloading',
+      percentage: 100,
+      message: 'Download completed',
+    }, tempFiles);
 
     // Generate unique filename for storage
     const ext = path.extname(downloadResult.fileName);
     const baseName = path.basename(downloadResult.fileName, ext);
     const uniqueFileName = `${baseName}-${nanoid(8)}${ext}`;
 
-    // Upload stage
+    // Upload stage - Use chunked uploader for large files
     await job.updateProgress({
       stage: 'uploading',
       percentage: 0,
       message: 'Starting upload to Bunny Storage...',
     } as ImportJobProgress);
 
-    const uploadResult = await bunnyStorage.upload({
-      filePath: tempFilePath,
-      fileName: uniqueFileName,
-      onProgress: async (progress) => {
-        await job.updateProgress({
-          stage: 'uploading',
-          percentage: progress.percentage,
-          message: `Uploading: ${progress.percentage}%`,
-        } as ImportJobProgress);
-      },
-    });
+    const fileSize = downloadResult.fileSize;
+    const useChunkedUpload = fileSize > 100 * 1024 * 1024; // Use chunked for files > 100MB
+
+    let uploadResult;
+    if (useChunkedUpload) {
+      logger.info('Using chunked upload for large file', { fileSize, fileName: uniqueFileName });
+      uploadResult = await chunkedUploader.upload({
+        filePath: tempFilePath,
+        fileName: uniqueFileName,
+        onProgress: async (progress) => {
+          const message = progress.totalChunks 
+            ? `Uploading chunk ${progress.currentChunk}/${progress.totalChunks}: ${progress.percentage}%`
+            : `Uploading: ${progress.percentage}%`;
+          const progressData = {
+            stage: 'uploading',
+            percentage: progress.percentage,
+            message,
+          };
+          await job.updateProgress(progressData as ImportJobProgress);
+          
+          // Update recovery state with upload progress
+          await recoveryService.updateJobProgress(job.id!, progressData, tempFiles);
+        },
+      });
+    } else {
+      uploadResult = await bunnyStorage.upload({
+        filePath: tempFilePath,
+        fileName: uniqueFileName,
+        onProgress: async (progress) => {
+          const progressData = {
+            stage: 'uploading',
+            percentage: progress.percentage,
+            message: `Uploading: ${progress.percentage}%`,
+          };
+          await job.updateProgress(progressData as ImportJobProgress);
+          
+          // Update recovery state with upload progress
+          await recoveryService.updateJobProgress(job.id!, progressData, tempFiles);
+        },
+      });
+    }
 
     // Clean up temporary file
     if (type === 'gdrive') {
@@ -106,6 +151,9 @@ export async function processImportJob(
         message: `✅ Import completed successfully\n\nFile: ${uploadResult.fileName}\nSize: ${(uploadResult.fileSize / 1024 / 1024).toFixed(2)}MB\nCDN URL: ${uploadResult.cdnUrl}`,
       });
     }
+
+    // Mark job as completed in recovery service
+    await recoveryService.completeJob(job.id!);
 
     return result;
   } catch (error) {
@@ -137,6 +185,9 @@ export async function processImportJob(
         });
       }
     }
+
+    // Mark job as failed in recovery service
+    await recoveryService.failJob(job.id!, error instanceof Error ? error : new Error(String(error)));
 
     throw error;
   }

@@ -41,7 +41,7 @@ export function getImportQueue(): Queue<ImportJobData, ImportJobResult> {
         attempts: env.MAX_RETRY_ATTEMPTS,
         backoff: {
           type: 'exponential',
-          delay: 2000,
+          delay: 5000, // Increased initial delay
         },
         removeOnComplete: {
           age: 24 * 3600, // 24 hours
@@ -72,6 +72,7 @@ export function startImportWorker(): Worker<ImportJobData, ImportJobResult> {
         logger.info('Processing import job', {
           jobId: job.id,
           data: job.data,
+          attemptsMade: job.attemptsMade,
         });
 
         try {
@@ -81,23 +82,60 @@ export function startImportWorker(): Worker<ImportJobData, ImportJobResult> {
           logger.error('Import job failed', {
             jobId: job.id,
             error: error instanceof Error ? error.message : String(error),
+            attemptsMade: job.attemptsMade,
+            maxAttempts: job.opts.attempts,
           });
+          
           Sentry.captureException(error, {
             tags: {
               jobId: job.id,
               jobType: 'import',
+              attemptsMade: job.attemptsMade,
             },
             extra: job.data,
           });
+          
+          // For certain types of errors, don't retry
+          if (error instanceof Error) {
+            const nonRetryableErrors = [
+              'File not found',
+              'Invalid Google Drive URL',
+              'File is not a video',
+              'access denied',
+              'unauthorized',
+            ];
+            
+            const shouldNotRetry = nonRetryableErrors.some(pattern => 
+              error.message.toLowerCase().includes(pattern.toLowerCase())
+            );
+            
+            if (shouldNotRetry) {
+              logger.info('Job failed with non-retryable error, not retrying', {
+                jobId: job.id,
+                error: error.message,
+              });
+              
+              // Mark job as failed permanently by throwing a specific error
+              const permanentError = new Error(`Permanent failure: ${error.message}`);
+              (permanentError as any).name = 'PermanentFailure';
+              throw permanentError;
+            }
+          }
+          
           throw error;
         }
       },
       {
         connection,
-        concurrency: 5,
-        maxStalledCount: 3,
-        stalledInterval: 30000,
+        concurrency: 1, // Single job for 10GB+ files on 4GB server
+        maxStalledCount: 5, // Increased for better recovery
+        stalledInterval: 60000, // Longer stall check for large files
         lockDuration: env.JOB_TIMEOUT_MS,
+        settings: {
+          stalledInterval: 60000,
+          maxStalledCount: 5,
+          retryProcessDelay: 5000, // 5 second delay before retrying failed jobs
+        },
       }
     );
 

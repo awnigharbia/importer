@@ -13,6 +13,7 @@ import { logger } from './utils/logger';
 import { errorHandler, notFoundHandler } from './api/middleware/errorHandler';
 import { startImportWorker, closeImportQueue } from './queues/importQueue';
 import { createDashboard } from './web/dashboard';
+import { getJobRecoveryService } from './services/jobRecovery';
 
 // Import routes
 import importRoutes from './api/routes/import';
@@ -88,8 +89,23 @@ const server = app.listen(env.PORT, () => {
   logger.info(`Dashboard available at http://localhost:${env.PORT}/dashboard`);
 });
 
+// Initialize job recovery service
+const jobRecoveryService = getJobRecoveryService();
+jobRecoveryService.initialize().catch((error) => {
+  logger.error('Failed to initialize job recovery service', { error });
+});
+
 // Start background workers
 startImportWorker();
+
+// Setup periodic cleanup
+setInterval(async () => {
+  try {
+    await jobRecoveryService.cleanupOldStates();
+  } catch (error) {
+    logger.error('Failed to cleanup old job states', { error });
+  }
+}, 6 * 60 * 60 * 1000); // Every 6 hours
 
 // Graceful shutdown
 async function gracefulShutdown(signal: string): Promise<void> {
@@ -101,6 +117,9 @@ async function gracefulShutdown(signal: string): Promise<void> {
   });
 
   try {
+    // Shutdown job recovery service (saves active job states)
+    await jobRecoveryService.shutdown();
+    
     // Close queue connections
     await closeImportQueue();
     
