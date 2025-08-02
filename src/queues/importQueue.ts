@@ -131,7 +131,7 @@ export function startImportWorker(): Worker<ImportJobData, ImportJobResult> {
       },
       {
         connection,
-        concurrency: 10, // Single job for 10GB+ files on 4GB server
+        concurrency: 5, // Single job for 10GB+ files on 4GB server
         maxStalledCount: 5, // Increased for better recovery
         stalledInterval: 60000, // Longer stall check for large files
         lockDuration: env.JOB_TIMEOUT_MS,
