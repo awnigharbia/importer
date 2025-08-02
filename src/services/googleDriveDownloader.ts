@@ -1,7 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 import { nanoid } from 'nanoid';
-import GoogleDriveDownloaderLib from '@abrifq/google-drive-downloader';
+import axios from 'axios';
+import { getDownloadLinkFromID } from '@abrifq/google-drive-downloader';
 import { env } from '../config/env';
 import { logger } from '../utils/logger';
 import { parseGoogleDriveUrl } from '../utils/googleDrive';
@@ -85,26 +86,59 @@ export class GoogleDriveDownloader {
     onProgress?: (progress: DownloadProgress) => void
   ): Promise<DownloadResult> {
     try {
-      // Create a progress callback that matches our interface
-      let lastPercentage = 0;
-      const progressCallback = (progress: number) => {
-        const percentage = Math.round(progress * 100);
-        if (onProgress && percentage !== lastPercentage) {
-          // We don't have exact byte information from the library, so we estimate
-          const downloadedBytes = Math.round((percentage / 100) * 1024 * 1024 * 100); // Estimate
-          const totalBytes = 1024 * 1024 * 100; // Estimate 100MB
-          
+      // Get the direct download URL using @abrifq/google-drive-downloader
+      logger.info('Getting direct download URL from Google Drive', { fileId });
+      const directDownloadUrl = await getDownloadLinkFromID(fileId);
+      
+      if (!directDownloadUrl) {
+        throw new Error('Could not get direct download URL from Google Drive. File may be private or deleted.');
+      }
+
+      logger.info('Got direct download URL, starting download', { 
+        fileId, 
+        downloadUrl: directDownloadUrl.substring(0, 100) + '...' // Log first 100 chars for debugging
+      });
+
+      // Download the file using axios with streaming
+      const response = await axios({
+        method: 'GET',
+        url: directDownloadUrl,
+        responseType: 'stream',
+        timeout: env.DOWNLOAD_TIMEOUT_MS,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+      });
+
+      const totalBytes = parseInt(response.headers['content-length'] || '0', 10);
+      let downloadedBytes = 0;
+
+      // Create write stream
+      const writer = fs.createWriteStream(filePath);
+
+      // Handle progress tracking
+      response.data.on('data', (chunk: Buffer) => {
+        downloadedBytes += chunk.length;
+        
+        if (onProgress && totalBytes > 0) {
+          const percentage = Math.round((downloadedBytes / totalBytes) * 100);
           onProgress({
             downloadedBytes,
             totalBytes,
             percentage,
           });
-          lastPercentage = percentage;
         }
-      };
+      });
 
-      // Use the @abrifq/google-drive-downloader library
-      await GoogleDriveDownloaderLib.downloadFile(fileId, filePath, progressCallback);
+      // Pipe the response to file
+      response.data.pipe(writer);
+
+      // Wait for download to complete
+      await new Promise<void>((resolve, reject) => {
+        writer.on('finish', () => resolve());
+        writer.on('error', reject);
+        response.data.on('error', reject);
+      });
 
       // Check if file was downloaded successfully
       if (!fs.existsSync(filePath)) {
@@ -114,7 +148,7 @@ export class GoogleDriveDownloader {
       const stats = fs.statSync(filePath);
       const fileName = path.basename(filePath);
 
-      // Validate it's a video file based on size and extension
+      // Validate file
       if (stats.size === 0) {
         throw new Error('Downloaded file is empty');
       }

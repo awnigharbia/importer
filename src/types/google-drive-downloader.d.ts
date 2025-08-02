@@ -1,8 +1,8 @@
 declare module '@abrifq/google-drive-downloader' {
-  interface GoogleDriveDownloader {
-    downloadFile(fileId: string, outputPath: string, progressCallback?: (progress: number) => void): Promise<void>;
-  }
+  function getFileDownloadLinkFromFileLink(fileLink: string): Promise<string>;
+  function getDownloadLinkFromID(fileID: string): Promise<string>;
+  function fileIDExtractor(fileLink: string): string;
   
-  const GoogleDriveDownloader: GoogleDriveDownloader;
-  export default GoogleDriveDownloader;
+  export default getFileDownloadLinkFromFileLink;
+  export { getDownloadLinkFromID, fileIDExtractor };
 }
