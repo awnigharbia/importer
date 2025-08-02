@@ -1,23 +1,21 @@
+import { google } from 'googleapis';
+import { OAuth2Client } from 'google-auth-library';
 import fs from 'fs';
 import path from 'path';
-import { nanoid } from 'nanoid';
-import { drive } from '@googleapis/drive';
-import axios from 'axios';
-import { env } from '../config/env';
-import { logger } from '../utils/logger';
-import { parseGoogleDriveUrl } from '../utils/googleDrive';
-import { retry } from '../utils/retry';
+import { Readable } from 'stream';
+import { GoogleDriveInfo, parseGoogleDriveUrl } from '../utils/googleDrive';
+import logger from '../utils/logger';
 
-export interface GoogleDriveDownloadOptions {
-  url: string;
-  fileName?: string | undefined;
-  onProgress?: (progress: DownloadProgress) => void;
+export interface GoogleDriveAuth {
+  clientId: string;
+  clientSecret: string;
+  refreshToken: string;
 }
 
-export interface DownloadProgress {
-  downloadedBytes: number;
-  totalBytes: number;
-  percentage: number;
+export interface DownloadOptions {
+  outputPath?: string;
+  fileName?: string;
+  maxSize?: number;
 }
 
 export interface DownloadResult {
@@ -28,351 +26,248 @@ export interface DownloadResult {
 }
 
 export class GoogleDriveDownloader {
-  private tempDir: string;
-  private driveApi: any;
+  private auth: OAuth2Client;
+  private drive: any;
 
-  constructor() {
-    this.tempDir = path.resolve(env.TEMP_DIR);
-    this.ensureTempDir();
-    
-    // Initialize Google Drive API with API key
-    if (env.GOOGLE_API_KEY) {
-      this.driveApi = drive({
-        version: 'v3',
-        auth: env.GOOGLE_API_KEY
-      });
-    } else {
-      this.driveApi = drive({
-        version: 'v3'
-      });
-    }
+  constructor(authConfig: GoogleDriveAuth) {
+    this.auth = new OAuth2Client(
+      authConfig.clientId,
+      authConfig.clientSecret,
+      'urn:ietf:wg:oauth:2.0:oob'
+    );
+
+    this.auth.setCredentials({
+      refresh_token: authConfig.refreshToken,
+    });
+
+    this.drive = google.drive({ version: 'v3', auth: this.auth });
   }
 
-  private ensureTempDir(): void {
-    if (!fs.existsSync(this.tempDir)) {
-      fs.mkdirSync(this.tempDir, { recursive: true });
-    }
-  }
-
-  async download(options: GoogleDriveDownloadOptions): Promise<DownloadResult> {
-    const { url, fileName, onProgress } = options;
-
-    const driveInfo = parseGoogleDriveUrl(url);
-    if (!driveInfo) {
-      throw new Error('Invalid Google Drive URL');
-    }
-
+  async downloadFile(
+    fileIdOrUrl: string,
+    options: DownloadOptions = {}
+  ): Promise<DownloadResult> {
     try {
-      // Generate a temporary file name
-      const suggestedFileName = fileName || 'download.mp4';
-      const tempFileName = `${nanoid()}_${suggestedFileName}`;
-      const tempFilePath = path.join(this.tempDir, tempFileName);
+      let fileId: string;
 
-      // Download the file
-      const result = await retry(
-        () => this.performDownload(driveInfo.fileId, tempFilePath, onProgress),
-        {
-          maxAttempts: env.MAX_RETRY_ATTEMPTS,
-          delay: 2000,
-          onRetry: (error, attempt) => {
-            logger.warn(`Google Drive download retry attempt ${attempt}`, {
-              fileId: driveInfo.fileId,
-              error: error.message,
-            });
-          },
+      if (fileIdOrUrl.includes('drive.google.com')) {
+        const driveInfo = parseGoogleDriveUrl(fileIdOrUrl);
+        if (!driveInfo) {
+          throw new Error('Invalid Google Drive URL');
         }
-      );
+        fileId = driveInfo.fileId;
+      } else {
+        fileId = fileIdOrUrl;
+      }
 
-      return result;
+      const fileMetadata = await this.getFileMetadata(fileId);
+      const fileName = options.fileName || fileMetadata.name || `download_${fileId}`;
+      const outputPath = options.outputPath || process.cwd();
+      const filePath = path.join(outputPath, fileName);
+
+      if (options.maxSize && fileMetadata.size && parseInt(fileMetadata.size) > options.maxSize) {
+        throw new Error(`File size (${fileMetadata.size} bytes) exceeds maximum allowed size (${options.maxSize} bytes)`);
+      }
+
+      logger.info(`Downloading Google Drive file: ${fileName} (${fileMetadata.size} bytes)`);
+
+      let downloadStream: Readable;
+
+      if (this.isGoogleWorkspaceFile(fileMetadata.mimeType)) {
+        downloadStream = await this.exportGoogleWorkspaceFile(fileId, fileMetadata.mimeType);
+      } else {
+        downloadStream = await this.downloadRegularFile(fileId);
+      }
+
+      await this.saveStreamToFile(downloadStream, filePath);
+
+      const stats = fs.statSync(filePath);
+
+      logger.info(`Successfully downloaded: ${fileName} (${stats.size} bytes)`);
+
+      return {
+        filePath,
+        fileName,
+        fileSize: stats.size,
+        mimeType: fileMetadata.mimeType || 'application/octet-stream'
+      };
+
     } catch (error) {
-      logger.error('Google Drive download failed', {
-        url,
-        error: error instanceof Error ? error.message : 'Unknown error',
-      });
+      logger.error('Error downloading Google Drive file:', error);
       throw error;
     }
   }
 
-  private async performDownload(
-    fileId: string,
-    filePath: string,
-    onProgress?: (progress: DownloadProgress) => void
-  ): Promise<DownloadResult> {
+  async downloadAsBuffer(fileIdOrUrl: string): Promise<Buffer> {
     try {
-      logger.info('Downloading Google Drive file', { fileId });
-      
-      // Try API download first if API key is available
-      if (env.GOOGLE_API_KEY) {
-        try {
-          return await this.apiDownload(fileId, filePath, onProgress);
-        } catch (apiError: any) {
-          logger.warn('API download failed, falling back to direct download', { 
-            error: apiError.message 
-          });
+      let fileId: string;
+
+      if (fileIdOrUrl.includes('drive.google.com')) {
+        const driveInfo = parseGoogleDriveUrl(fileIdOrUrl);
+        if (!driveInfo) {
+          throw new Error('Invalid Google Drive URL');
         }
+        fileId = driveInfo.fileId;
+      } else {
+        fileId = fileIdOrUrl;
       }
-      
-      // Fallback to direct download
-      return await this.directDownload(fileId, filePath, onProgress);
-    } catch (error: any) {
-      // Clean up on failure
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
+
+      const fileMetadata = await this.getFileMetadata(fileId);
+
+      let downloadStream: Readable;
+
+      if (this.isGoogleWorkspaceFile(fileMetadata.mimeType)) {
+        downloadStream = await this.exportGoogleWorkspaceFile(fileId, fileMetadata.mimeType);
+      } else {
+        downloadStream = await this.downloadRegularFile(fileId);
       }
-      
-      const errorMessage = error?.message || 'Unknown error';
-      
-      // Handle common errors
-      if (error?.code === 403 || errorMessage.includes('403')) {
-        throw new Error('File access denied - file may be private or require permissions');
-      } else if (error?.code === 404 || errorMessage.includes('404')) {
-        throw new Error('File not found - check if the Google Drive URL is correct');
-      } else if (errorMessage.includes('quota')) {
-        throw new Error('Google Drive download quota exceeded - try again later');
-      }
-      
-      throw new Error(`Google Drive download failed: ${errorMessage}`);
+
+      return this.streamToBuffer(downloadStream);
+
+    } catch (error) {
+      logger.error('Error downloading Google Drive file to buffer:', error);
+      throw error;
     }
   }
 
-  private async apiDownload(
-    fileId: string,
-    filePath: string,
-    onProgress?: (progress: DownloadProgress) => void
-  ): Promise<DownloadResult> {
-    logger.info('Attempting API download with key', { fileId });
-    
-    // Get file metadata
-    const metadataResponse = await this.driveApi.files.get({
-      fileId: fileId,
-      fields: 'id, name, size, mimeType',
-      supportsAllDrives: true,
-    });
-
-    const fileSize = metadataResponse.data?.size ? parseInt(metadataResponse.data.size) : 0;
-    const fileName = metadataResponse.data?.name || path.basename(filePath);
-    const mimeType = metadataResponse.data?.mimeType || 'video/mp4';
-
-    // Download the file
-    const dest = fs.createWriteStream(filePath);
-    let downloadedBytes = 0;
-
-    const response = await this.driveApi.files.get(
-      {
-        fileId: fileId,
-        alt: 'media',
-        supportsAllDrives: true,
-      },
-      {
-        responseType: 'stream',
-      }
-    );
-
-    // Handle progress
-    response.data.on('data', (chunk: Buffer) => {
-      downloadedBytes += chunk.length;
-      if (onProgress && fileSize > 0) {
-        const percentage = Math.round((downloadedBytes / fileSize) * 100);
-        onProgress({
-          downloadedBytes,
-          totalBytes: fileSize,
-          percentage,
-        });
-      }
-    });
-
-    // Pipe to file
-    response.data.pipe(dest);
-
-    // Wait for download completion
-    await new Promise<void>((resolve, reject) => {
-      dest.on('finish', resolve);
-      dest.on('error', reject);
-      response.data.on('error', reject);
-    });
-
-    // Validate the downloaded file
-    if (!fs.existsSync(filePath)) {
-      throw new Error('File download failed - file not found after download');
-    }
-
-    const stats = fs.statSync(filePath);
-    
-    if (stats.size === 0) {
-      throw new Error('Downloaded file is empty');
-    }
-
-    // Check file size limit
-    if (stats.size > env.MAX_FILE_SIZE_MB * 1024 * 1024) {
-      fs.unlinkSync(filePath);
-      throw new Error(`File size exceeds limit of ${env.MAX_FILE_SIZE_MB}MB`);
-    }
-
-    logger.info('Google Drive file downloaded successfully via API', {
-      fileId,
-      filePath,
-      fileSize: stats.size,
-      fileName,
-    });
-
-    return {
-      filePath,
-      fileName,
-      fileSize: stats.size,
-      mimeType,
-    };
-  }
-
-  private async directDownload(
-    fileId: string,
-    filePath: string,
-    onProgress?: (progress: DownloadProgress) => void
-  ): Promise<DownloadResult> {
-    logger.info('Attempting direct download without authentication', { fileId });
-    
-    const downloadUrl = `https://drive.google.com/uc?export=download&id=${fileId}`;
-    
-    // First, try to get the file with a HEAD request
+  private async getFileMetadata(fileId: string) {
     try {
-      const headResponse = await axios.head(downloadUrl, {
-        maxRedirects: 0,
-        validateStatus: (status) => status < 400,
+      const response = await this.drive.files.get({
+        fileId,
+        fields: 'id,name,size,mimeType,parents'
+      });
+      return response.data;
+    } catch (error) {
+      logger.error(`Error getting file metadata for ${fileId}:`, error);
+      throw new Error(`Failed to get file metadata: ${error}`);
+    }
+  }
+
+  private async downloadRegularFile(fileId: string): Promise<Readable> {
+    try {
+      const response = await this.drive.files.get({
+        fileId,
+        alt: 'media'
+      }, {
+        responseType: 'stream'
+      });
+      return response.data;
+    } catch (error) {
+      logger.error(`Error downloading regular file ${fileId}:`, error);
+      throw new Error(`Failed to download file: ${error}`);
+    }
+  }
+
+  private async exportGoogleWorkspaceFile(fileId: string, mimeType: string): Promise<Readable> {
+    try {
+      const exportMimeType = this.getExportMimeType(mimeType);
+      const response = await this.drive.files.export({
+        fileId,
+        mimeType: exportMimeType
+      }, {
+        responseType: 'stream'
+      });
+      return response.data;
+    } catch (error) {
+      logger.error(`Error exporting Google Workspace file ${fileId}:`, error);
+      throw new Error(`Failed to export file: ${error}`);
+    }
+  }
+
+  private getExportMimeType(originalMimeType: string): string {
+    const exportMap: Record<string, string> = {
+      'application/vnd.google-apps.document': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.google-apps.spreadsheet': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.google-apps.presentation': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      'application/vnd.google-apps.drawing': 'image/png'
+    };
+
+    return exportMap[originalMimeType] || 'application/pdf';
+  }
+
+  private isGoogleWorkspaceFile(mimeType: string): boolean {
+    const workspaceMimeTypes = [
+      'application/vnd.google-apps.document',
+      'application/vnd.google-apps.spreadsheet',
+      'application/vnd.google-apps.presentation',
+      'application/vnd.google-apps.drawing'
+    ];
+    return workspaceMimeTypes.includes(mimeType);
+  }
+
+  private async saveStreamToFile(stream: Readable, filePath: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const writeStream = fs.createWriteStream(filePath);
+
+      stream.on('error', (error) => {
+        writeStream.destroy();
+        reject(error);
       });
 
-      const contentLength = headResponse.headers['content-length'];
-      if (contentLength && parseInt(contentLength) > 0) {
-        // Direct download is possible
-        return await this.downloadWithAxios(downloadUrl, filePath, onProgress);
-      }
-    } catch (error) {
-      // Continue to confirmation page handling
-    }
+      writeStream.on('error', (error) => {
+        reject(error);
+      });
 
-    // Handle confirmation page for large files
-    const response = await axios.get(downloadUrl, {
-      maxRedirects: 5,
-      validateStatus: (status) => status < 500,
+      writeStream.on('finish', () => {
+        resolve();
+      });
+
+      stream.pipe(writeStream);
     });
+  }
 
-    // Look for confirmation token in the response
-    const html = response.data;
-    let finalUrl = downloadUrl;
+  private async streamToBuffer(stream: Readable): Promise<Buffer> {
+    return new Promise((resolve, reject) => {
+      const chunks: Buffer[] = [];
 
-    // Try to find confirmation URL
-    const confirmMatch = html.match(/confirm=([a-zA-Z0-9_-]+)/);
-    if (confirmMatch) {
-      finalUrl = `${downloadUrl}&confirm=${confirmMatch[1]}`;
+      stream.on('data', (chunk) => {
+        chunks.push(chunk);
+      });
+
+      stream.on('error', (error) => {
+        reject(error);
+      });
+
+      stream.on('end', () => {
+        resolve(Buffer.concat(chunks));
+      });
+    });
+  }
+
+  async checkFileExists(fileIdOrUrl: string): Promise<boolean> {
+    try {
+      let fileId: string;
+
+      if (fileIdOrUrl.includes('drive.google.com')) {
+        const driveInfo = parseGoogleDriveUrl(fileIdOrUrl);
+        if (!driveInfo) {
+          return false;
+        }
+        fileId = driveInfo.fileId;
+      } else {
+        fileId = fileIdOrUrl;
+      }
+
+      await this.getFileMetadata(fileId);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async getFileInfo(fileIdOrUrl: string) {
+    let fileId: string;
+
+    if (fileIdOrUrl.includes('drive.google.com')) {
+      const driveInfo = parseGoogleDriveUrl(fileIdOrUrl);
+      if (!driveInfo) {
+        throw new Error('Invalid Google Drive URL');
+      }
+      fileId = driveInfo.fileId;
     } else {
-      // Try alternative pattern
-      const downloadMatch = html.match(/href="(\/uc\?export=download[^"]*)"/);
-      if (downloadMatch) {
-        finalUrl = `https://drive.google.com${downloadMatch[1].replace(/&amp;/g, '&')}`;
-      }
+      fileId = fileIdOrUrl;
     }
 
-    return await this.downloadWithAxios(finalUrl, filePath, onProgress);
-  }
-
-  private async downloadWithAxios(
-    url: string,
-    filePath: string,
-    onProgress?: (progress: DownloadProgress) => void
-  ): Promise<DownloadResult> {
-    const response = await axios({
-      method: 'GET',
-      url: url,
-      responseType: 'stream',
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-      },
-      timeout: env.DOWNLOAD_TIMEOUT_MS,
-    });
-
-    const totalBytes = parseInt(response.headers['content-length'] || '0', 10);
-    let downloadedBytes = 0;
-
-    const writer = fs.createWriteStream(filePath);
-
-    if (onProgress) {
-      response.data.on('data', (chunk: Buffer) => {
-        downloadedBytes += chunk.length;
-        if (totalBytes > 0) {
-          const percentage = Math.round((downloadedBytes / totalBytes) * 100);
-          onProgress({
-            downloadedBytes,
-            totalBytes,
-            percentage,
-          });
-        }
-      });
-    }
-
-    response.data.pipe(writer);
-
-    await new Promise<void>((resolve, reject) => {
-      writer.on('finish', resolve);
-      writer.on('error', reject);
-      response.data.on('error', reject);
-    });
-
-    if (!fs.existsSync(filePath)) {
-      throw new Error('File download failed - file not found after download');
-    }
-
-    const stats = fs.statSync(filePath);
-    
-    if (stats.size === 0) {
-      throw new Error('Downloaded file is empty');
-    }
-
-    // Check file size limit
-    if (stats.size > env.MAX_FILE_SIZE_MB * 1024 * 1024) {
-      fs.unlinkSync(filePath);
-      throw new Error(`File size exceeds limit of ${env.MAX_FILE_SIZE_MB}MB`);
-    }
-
-    const fileName = path.basename(filePath);
-    const ext = path.extname(fileName).toLowerCase();
-    const mimeType = this.getMimeTypeFromExtension(ext);
-
-    logger.info('Google Drive file downloaded successfully via direct download', {
-      filePath,
-      fileSize: stats.size,
-      fileName,
-    });
-
-    return {
-      filePath,
-      fileName,
-      fileSize: stats.size,
-      mimeType,
-    };
-  }
-
-  private getMimeTypeFromExtension(ext: string): string {
-    const mimeMap: { [key: string]: string } = {
-      '.mp4': 'video/mp4',
-      '.avi': 'video/x-msvideo',
-      '.mov': 'video/quicktime',
-      '.mkv': 'video/x-matroska',
-      '.wmv': 'video/x-ms-wmv',
-      '.flv': 'video/x-flv',
-      '.webm': 'video/webm',
-      '.m4v': 'video/x-m4v',
-      '.3gp': 'video/3gpp',
-    };
-    
-    return mimeMap[ext] || 'video/mp4';
-  }
-
-  cleanupFile(filePath: string): void {
-    try {
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-        logger.info('Cleaned up temporary file', { filePath });
-      }
-    } catch (error) {
-      logger.error('Failed to cleanup file', { filePath, error });
-    }
+    return this.getFileMetadata(fileId);
   }
 }
