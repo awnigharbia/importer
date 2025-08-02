@@ -38,11 +38,19 @@ export class JobRecoveryService {
   }
 
   async trackJob(job: Job, tempFiles: string[] = []): Promise<void> {
+    let progress;
+    try {
+      progress = await job.getProgress();
+    } catch (error) {
+      // Fallback for older BullMQ versions or when progress is not available
+      progress = null;
+    }
+
     const jobState: JobState = {
       jobId: job.id!,
       status: 'active',
       data: job.data,
-      progress: await job.getProgress(),
+      progress,
       tempFiles,
       timestamp: Date.now(),
     };
@@ -134,7 +142,13 @@ export class JobRecoveryService {
         return;
       }
 
-      const jobStatus = await job.getState();
+      let jobStatus;
+      try {
+        jobStatus = await job.getState();
+      } catch (error) {
+        logger.warn('Failed to get job state, assuming failed', { jobId: jobState.jobId });
+        jobStatus = 'failed';
+      }
       
       if (jobStatus === 'completed') {
         logger.info('Job already completed, cleaning up state', { jobId: jobState.jobId });
@@ -153,8 +167,15 @@ export class JobRecoveryService {
 
       // Retry the job
       if (jobStatus === 'failed' || jobStatus === 'stalled') {
-        logger.info('Retrying stalled/failed job', { jobId: jobState.jobId });
-        await job.retry();
+        try {
+          logger.info('Retrying stalled/failed job', { jobId: jobState.jobId });
+          await job.retry();
+        } catch (retryError) {
+          logger.warn('Failed to retry job, it may have exceeded max attempts', { 
+            jobId: jobState.jobId,
+            error: retryError instanceof Error ? retryError.message : String(retryError)
+          });
+        }
       }
 
       // Remove old state
