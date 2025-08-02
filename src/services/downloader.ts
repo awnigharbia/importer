@@ -89,7 +89,9 @@ export class Downloader {
     filePath: string,
     onProgress?: (progress: DownloadProgress) => void
   ): Promise<DownloadResult> {
-    const writer = fs.createWriteStream(filePath);
+    const writer = fs.createWriteStream(filePath, {
+      highWaterMark: env.STREAM_BUFFER_SIZE * 1024, // Use configurable buffer size
+    });
 
     try {
       const response = await axios({
@@ -98,6 +100,8 @@ export class Downloader {
         responseType: 'stream',
         timeout: env.DOWNLOAD_TIMEOUT_MS,
         maxRedirects: 5,
+        maxContentLength: env.MAX_FILE_SIZE_MB * 1024 * 1024, // Set max content length
+        maxBodyLength: env.MAX_FILE_SIZE_MB * 1024 * 1024, // Set max body length
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         },

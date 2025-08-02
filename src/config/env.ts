@@ -32,12 +32,16 @@ const envSchema = z.object({
 
   // Jobs
   MAX_RETRY_ATTEMPTS: z.string().default('3').transform(Number),
-  JOB_TIMEOUT_MS: z.string().default('1800000').transform(Number),
+  JOB_TIMEOUT_MS: z.string().default('7200000').transform(Number), // 2 hours for large files
   CLEANUP_INTERVAL_MS: z.string().default('300000').transform(Number),
 
   // Download limits
-  MAX_FILE_SIZE_MB: z.string().default('5000').transform(Number),
-  DOWNLOAD_TIMEOUT_MS: z.string().default('600000').transform(Number),
+  MAX_FILE_SIZE_MB: z.string().default('15000').transform(Number), // Increased to 15GB
+  DOWNLOAD_TIMEOUT_MS: z.string().default('3600000').transform(Number), // 1 hour timeout
+
+  // Node.js Memory
+  NODE_MAX_OLD_SPACE_SIZE: z.string().default('8192').transform(Number), // 8GB heap
+  STREAM_BUFFER_SIZE: z.string().default('64').transform(Number), // 64KB buffer chunks
 
   // Rate limiting
   RATE_LIMIT_WINDOW_MS: z.string().default('900000').transform(Number),

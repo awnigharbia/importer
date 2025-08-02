@@ -17,6 +17,8 @@ export function createTusServer(): Server {
   const server = new Server({
     path: env.TUS_PATH,
     datastore,
+    maxSize: env.MAX_FILE_SIZE_MB * 1024 * 1024, // Set max file size
+    respectForwardedHeaders: true,
     namingFunction: (req) => {
       const uploadMetadata = req.headers['upload-metadata'];
       let fileName = `upload-${nanoid()}.bin`;

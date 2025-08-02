@@ -86,12 +86,15 @@ export class BunnyStorage {
     fileSize: number,
     onProgress?: (progress: UploadProgress) => void
   ): Promise<void> {
-    const fileStream = fs.createReadStream(filePath);
+    const fileStream = fs.createReadStream(filePath, {
+      highWaterMark: env.STREAM_BUFFER_SIZE * 1024, // Use configurable buffer size
+    });
     let uploadedBytes = 0;
 
     // Create a transform stream to track progress
     const { Transform } = await import('stream');
     const progressStream = new Transform({
+      highWaterMark: env.STREAM_BUFFER_SIZE * 1024, // Match buffer size
       transform(chunk, _encoding, callback) {
         uploadedBytes += chunk.length;
         if (onProgress) {
@@ -118,7 +121,7 @@ export class BunnyStorage {
         data: fileStream.pipe(progressStream),
         maxBodyLength: Infinity,
         maxContentLength: Infinity,
-        timeout: env.DOWNLOAD_TIMEOUT_MS,
+        timeout: env.DOWNLOAD_TIMEOUT_MS * 2, // Double timeout for uploads
       });
 
       if (response.status !== 201 && response.status !== 200) {
