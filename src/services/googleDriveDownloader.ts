@@ -1,15 +1,11 @@
 import fs from 'fs';
 import path from 'path';
 import { nanoid } from 'nanoid';
-import axios from 'axios';
-import { exec } from 'child_process';
-import { promisify } from 'util';
+import { downloadFile } from 'simple-googledrive-downloader';
 import { env } from '../config/env';
 import { logger } from '../utils/logger';
 import { parseGoogleDriveUrl } from '../utils/googleDrive';
 import { retry } from '../utils/retry';
-
-const execAsync = promisify(exec);
 
 export interface GoogleDriveDownloadOptions {
   url: string;
@@ -86,81 +82,35 @@ export class GoogleDriveDownloader {
   private async performDownload(
     fileId: string,
     filePath: string,
-    onProgress?: (progress: DownloadProgress) => void
+    _onProgress?: (progress: DownloadProgress) => void
   ): Promise<DownloadResult> {
     try {
-      // Try using gdown first if available
-      const gdownAvailable = await this.checkGdownAvailable();
+      logger.info('Downloading Google Drive file using simple-googledrive-downloader', { fileId });
       
-      if (gdownAvailable) {
-        logger.info('Using gdown for Google Drive download', { fileId });
-        const result = await this.downloadWithGdown(fileId, filePath);
-        if (result) {
-          return result;
-        }
+      // Extract directory, filename and extension from filePath
+      const dirPath = path.dirname(filePath);
+      const fullFileName = path.basename(filePath);
+      const extIndex = fullFileName.lastIndexOf('.');
+      const filename = extIndex > 0 ? fullFileName.substring(0, extIndex) : fullFileName;
+      const extension = extIndex > 0 ? fullFileName.substring(extIndex + 1) : 'mp4';
+      
+      // Use simple-googledrive-downloader to download the file
+      const downloadedPath = await downloadFile(fileId, dirPath, filename, extension);
+      
+      if (!downloadedPath) {
+        throw new Error('Download failed - simple-googledrive-downloader returned null');
       }
 
-      // Fallback to custom method
-      logger.info('Getting direct download URL from Google Drive', { fileId });
-      const directDownloadUrl = await this.getGoogleDriveDirectUrl(fileId);
+      // The downloaded file might be at downloadedPath instead of filePath
+      // Check both locations
+      const actualFilePath = fs.existsSync(downloadedPath) ? downloadedPath : filePath;
       
-      if (!directDownloadUrl) {
-        throw new Error('Could not get direct download URL from Google Drive. File may be private or deleted.');
-      }
-
-      logger.info('Got direct download URL, starting download', { 
-        fileId, 
-        downloadUrl: directDownloadUrl.substring(0, 100) + '...' // Log first 100 chars for debugging
-      });
-
-      // Download the file using axios with streaming
-      const response = await axios({
-        method: 'GET',
-        url: directDownloadUrl,
-        responseType: 'stream',
-        timeout: env.DOWNLOAD_TIMEOUT_MS,
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
-      });
-
-      const totalBytes = parseInt(response.headers['content-length'] || '0', 10);
-      let downloadedBytes = 0;
-
-      // Create write stream
-      const writer = fs.createWriteStream(filePath);
-
-      // Handle progress tracking
-      response.data.on('data', (chunk: Buffer) => {
-        downloadedBytes += chunk.length;
-        
-        if (onProgress && totalBytes > 0) {
-          const percentage = Math.round((downloadedBytes / totalBytes) * 100);
-          onProgress({
-            downloadedBytes,
-            totalBytes,
-            percentage,
-          });
-        }
-      });
-
-      // Pipe the response to file
-      response.data.pipe(writer);
-
-      // Wait for download to complete
-      await new Promise<void>((resolve, reject) => {
-        writer.on('finish', () => resolve());
-        writer.on('error', reject);
-        response.data.on('error', reject);
-      });
-
-      // Check if file was downloaded successfully
-      if (!fs.existsSync(filePath)) {
+      if (!fs.existsSync(actualFilePath)) {
         throw new Error('File download failed - file not found after download');
       }
 
-      const stats = fs.statSync(filePath);
-      const fileName = path.basename(filePath);
+      const stats = fs.statSync(actualFilePath);
+      const fileName = path.basename(actualFilePath);
 
       // Validate file
       if (stats.size === 0) {
@@ -180,6 +130,11 @@ export class GoogleDriveDownloader {
       
       if (!videoExtensions.includes(ext)) {
         logger.warn('Downloaded file may not be a video based on extension', { fileName, ext });
+      }
+
+      // Move file to expected location if needed
+      if (actualFilePath !== filePath && fs.existsSync(actualFilePath)) {
+        fs.renameSync(actualFilePath, filePath);
       }
 
       logger.info('Google Drive file downloaded successfully', {
@@ -216,131 +171,6 @@ export class GoogleDriveDownloader {
     }
   }
 
-  private async checkGdownAvailable(): Promise<boolean> {
-    try {
-      await execAsync('which gdown');
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  private async downloadWithGdown(fileId: string, filePath: string): Promise<DownloadResult | null> {
-    try {
-      const driveUrl = `https://drive.google.com/uc?id=${fileId}`;
-      
-      // Use gdown with quiet mode and fuzzy option for better handling
-      const command = `gdown "${driveUrl}" -O "${filePath}" --quiet --fuzzy`;
-      
-      logger.info('Executing gdown command', { command: command.substring(0, 100) + '...' });
-      
-      const { stderr } = await execAsync(command, {
-        timeout: env.DOWNLOAD_TIMEOUT_MS,
-        maxBuffer: 1024 * 1024 * 10 // 10MB buffer
-      });
-
-      if (stderr && !stderr.includes('Downloading')) {
-        logger.warn('gdown stderr output', { stderr });
-      }
-
-      // Check if file was downloaded successfully
-      if (!fs.existsSync(filePath)) {
-        logger.error('gdown download failed - file not found');
-        return null;
-      }
-
-      const stats = fs.statSync(filePath);
-      const fileName = path.basename(filePath);
-
-      // Validate file
-      if (stats.size === 0) {
-        fs.unlinkSync(filePath);
-        logger.error('gdown downloaded empty file');
-        return null;
-      }
-
-      // Check file size limit
-      if (stats.size > env.MAX_FILE_SIZE_MB * 1024 * 1024) {
-        fs.unlinkSync(filePath);
-        throw new Error(`File size exceeds limit of ${env.MAX_FILE_SIZE_MB}MB`);
-      }
-
-      logger.info('gdown download successful', {
-        fileId,
-        filePath,
-        fileSize: stats.size,
-        fileName,
-      });
-
-      const ext = path.extname(fileName).toLowerCase();
-      return {
-        filePath,
-        fileName,
-        fileSize: stats.size,
-        mimeType: this.getMimeTypeFromExtension(ext),
-      };
-    } catch (error) {
-      logger.error('gdown download failed', { error });
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-      }
-      return null;
-    }
-  }
-
-  private async getGoogleDriveDirectUrl(fileId: string): Promise<string | null> {
-    try {
-      // First try the direct download URL
-      const downloadUrl = `https://drive.google.com/uc?export=download&id=${fileId}`;
-      
-      // Make a HEAD request first to check if we get redirected
-      const headResponse = await axios({
-        method: 'HEAD',
-        url: downloadUrl,
-        maxRedirects: 0,
-        validateStatus: (status) => status < 400,
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
-      });
-
-      // If we get a content-length header, the direct URL works
-      if (headResponse.headers['content-length']) {
-        return downloadUrl;
-      }
-
-      // If direct URL doesn't work, try to get the confirmation URL
-      const response = await axios({
-        method: 'GET',
-        url: downloadUrl,
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
-      });
-
-      // Look for the confirmation download link in the HTML response
-      const html = response.data;
-      
-      // Check for the download confirmation link
-      const confirmMatch = html.match(/href="([^"]*&amp;confirm=[^"]*)"/);
-      if (confirmMatch) {
-        return confirmMatch[1].replace(/&amp;/g, '&');
-      }
-
-      // Alternative pattern for the download link
-      const downloadMatch = html.match(/href="(\/uc\?export=download[^"]*)"/);
-      if (downloadMatch) {
-        return `https://drive.google.com${downloadMatch[1].replace(/&amp;/g, '&')}`;
-      }
-
-      // Last resort: try the original URL with &confirm=t
-      return `${downloadUrl}&confirm=t`;
-      
-    } catch (error) {
-      logger.error('Failed to get Google Drive direct URL', { fileId, error });
-      return null;
-    }
-  }
 
   private getMimeTypeFromExtension(ext: string): string {
     const mimeMap: { [key: string]: string } = {
