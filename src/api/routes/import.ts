@@ -2,7 +2,6 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { nanoid } from 'nanoid';
 import { addImportJob } from '../../queues/importQueue';
-import { AppError } from '../middleware/errorHandler';
 import { isGoogleDriveUrl } from '../../utils/googleDrive';
 
 const router = Router();
@@ -34,7 +33,7 @@ router.post('/import', async (req, res, next) => {
     const job = await addImportJob({
       url,
       type,
-      fileName,
+      fileName: fileName || undefined,
       requestId,
     });
 

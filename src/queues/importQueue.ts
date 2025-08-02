@@ -8,7 +8,7 @@ import { Sentry } from '../config/sentry';
 export interface ImportJobData {
   url: string;
   type: 'gdrive' | 'direct';
-  fileName?: string;
+  fileName?: string | undefined;
   requestId: string;
 }
 
@@ -92,7 +92,11 @@ export function startImportWorker(): Worker<ImportJobData, ImportJobResult> {
               jobType: 'import',
               attemptsMade: job.attemptsMade,
             },
-            extra: job.data,
+            extra: {
+              url: job.data.url,
+              type: job.data.type,
+              requestId: job.data.requestId,
+            },
           });
           
           // For certain types of errors, don't retry
@@ -131,11 +135,6 @@ export function startImportWorker(): Worker<ImportJobData, ImportJobResult> {
         maxStalledCount: 5, // Increased for better recovery
         stalledInterval: 60000, // Longer stall check for large files
         lockDuration: env.JOB_TIMEOUT_MS,
-        settings: {
-          stalledInterval: 60000,
-          maxStalledCount: 5,
-          retryProcessDelay: 5000, // 5 second delay before retrying failed jobs
-        },
       }
     );
 

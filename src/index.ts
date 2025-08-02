@@ -53,7 +53,7 @@ app.use('/api/', limiter);
 app.use(express.static(path.join(__dirname, 'web/public')));
 
 // Health check
-app.get('/health', (req, res) => {
+app.get('/health', (_req, res) => {
   res.json({
     status: 'ok',
     service: 'importer',
@@ -72,7 +72,7 @@ const dashboardAdapter = createDashboard();
 app.use('/dashboard', dashboardAdapter.getRouter());
 
 // Root route
-app.get('/', (req, res) => {
+app.get('/', (_req, res) => {
   res.sendFile(path.join(__dirname, 'web/public/index.html'));
 });
 

@@ -14,7 +14,7 @@ export class MemoryMonitor {
   private static readonly CHECK_INTERVAL = 10000; // 10 seconds
   
   private maxHeapSize: number;
-  private monitorInterval?: NodeJS.Timeout;
+  private monitorInterval?: NodeJS.Timeout | undefined;
   private isMonitoring = false;
 
   constructor() {

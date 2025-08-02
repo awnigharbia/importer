@@ -11,7 +11,7 @@ import { retry } from '../utils/retry';
 export interface DownloadOptions {
   url: string;
   type: 'gdrive' | 'direct';
-  fileName?: string;
+  fileName?: string | undefined;
   onProgress?: (progress: DownloadProgress) => void;
 }
 

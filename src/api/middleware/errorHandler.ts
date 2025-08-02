@@ -25,7 +25,7 @@ export function errorHandler(
   err: ApiError,
   req: Request,
   res: Response,
-  next: NextFunction
+  _next: NextFunction
 ): void {
   let statusCode = err.statusCode || 500;
   let message = err.message || 'Internal Server Error';
@@ -66,12 +66,12 @@ export function errorHandler(
     error: {
       message,
       details,
-      ...(process.env.NODE_ENV === 'development' && { stack: err.stack }),
+      ...(process.env['NODE_ENV'] === 'development' && { stack: err.stack }),
     },
   });
 }
 
-export function notFoundHandler(req: Request, res: Response): void {
+export function notFoundHandler(_req: Request, res: Response): void {
   res.status(404).json({
     success: false,
     error: {

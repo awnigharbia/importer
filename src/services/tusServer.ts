@@ -4,7 +4,6 @@ import path from 'path';
 import { nanoid } from 'nanoid';
 import { env } from '../config/env';
 import { logger } from '../utils/logger';
-import { BunnyStorage } from './bunnyStorage';
 import { addImportJob } from '../queues/importQueue';
 
 export function createTusServer(): Server {
@@ -25,20 +24,21 @@ export function createTusServer(): Server {
 
       if (uploadMetadata) {
         const metadataObj = parseMetadata(uploadMetadata as string);
-        if (metadataObj.filename) {
-          fileName = Buffer.from(metadataObj.filename, 'base64').toString('utf8');
+        if (metadataObj['filename']) {
+          fileName = Buffer.from(metadataObj['filename'], 'base64').toString('utf8');
         }
       }
 
       return fileName;
     },
-    onUploadCreate: async (req, res, upload) => {
+    onUploadCreate: async (_req, _res, upload) => {
       logger.info('TUS upload created', {
         uploadId: upload.id,
         size: upload.size,
       });
+      return { res: _res };
     },
-    onUploadFinish: async (req, res, upload) => {
+    onUploadFinish: async (_req, _res, upload) => {
       logger.info('TUS upload finished', {
         uploadId: upload.id,
         size: upload.size,
@@ -68,26 +68,27 @@ export function createTusServer(): Server {
           error: error instanceof Error ? error.message : String(error),
         });
       }
+      return { res: _res };
     },
   });
 
   // Add event listeners
-  server.on(EVENTS.POST_CREATE, (req, res, upload) => {
+  server.on(EVENTS.POST_CREATE, (_req, _res, upload) => {
     logger.debug('TUS POST_CREATE event', { uploadId: upload.id });
   });
 
-  server.on(EVENTS.POST_RECEIVE, (req, res, upload) => {
+  server.on(EVENTS.POST_RECEIVE, (_req, _res, upload) => {
     logger.debug('TUS POST_RECEIVE event', { 
       uploadId: upload.id,
       offset: upload.offset,
     });
   });
 
-  server.on(EVENTS.POST_FINISH, (req, res, upload) => {
+  server.on(EVENTS.POST_FINISH, (_req, _res, upload) => {
     logger.debug('TUS POST_FINISH event', { uploadId: upload.id });
   });
 
-  server.on(EVENTS.POST_TERMINATE, (req, res, id) => {
+  server.on(EVENTS.POST_TERMINATE, (_req, _res, id) => {
     logger.info('TUS upload terminated', { uploadId: id });
   });
 

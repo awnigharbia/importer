@@ -9,7 +9,7 @@ import { retry } from '../utils/retry';
 
 export interface GoogleDriveDownloadOptions {
   url: string;
-  fileName?: string;
+  fileName?: string | undefined;
   onProgress?: (progress: DownloadProgress) => void;
 }
 

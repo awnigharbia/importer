@@ -5,7 +5,6 @@ import { ImportJobData, ImportJobResult, ImportJobProgress } from '../queues/imp
 import { Downloader } from '../services/downloader';
 import { GoogleDriveDownloader } from '../services/googleDriveDownloader';
 import { BunnyStorage } from '../services/bunnyStorage';
-import { ChunkedUploader } from '../services/chunkedUploader';
 import { sendTelegramNotification } from '../services/telegram';
 import { logger } from '../utils/logger';
 import { env } from '../config/env';
@@ -19,7 +18,6 @@ export async function processImportJob(
   const downloader = new Downloader();
   const googleDriveDownloader = new GoogleDriveDownloader();
   const bunnyStorage = new BunnyStorage();
-  const chunkedUploader = new ChunkedUploader();
   const recoveryService = getJobRecoveryService();
   const memoryMonitor = getMemoryMonitor();
 
@@ -44,7 +42,7 @@ export async function processImportJob(
       // Use Google Drive API for Google Drive files
       downloadResult = await googleDriveDownloader.download({
         url,
-        fileName,
+        fileName: fileName || undefined,
         onProgress: async (progress) => {
           await job.updateProgress({
             stage: 'downloading',
@@ -58,7 +56,7 @@ export async function processImportJob(
       downloadResult = await downloader.download({
         url,
         type,
-        fileName,
+        fileName: fileName || undefined,
         onProgress: async (progress) => {
           await job.updateProgress({
             stage: 'downloading',

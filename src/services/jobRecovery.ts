@@ -1,9 +1,7 @@
 import { Queue, Job } from 'bullmq';
 import { getRedisClient } from '../config/redis';
 import { logger } from '../utils/logger';
-import { env } from '../config/env';
 import fs from 'fs';
-import path from 'path';
 
 export interface JobState {
   jobId: string;
@@ -40,7 +38,7 @@ export class JobRecoveryService {
   async trackJob(job: Job, tempFiles: string[] = []): Promise<void> {
     let progress;
     try {
-      progress = await job.getProgress();
+      progress = job.progress || null;
     } catch (error) {
       // Fallback for older BullMQ versions or when progress is not available
       progress = null;
@@ -249,7 +247,7 @@ export class JobRecoveryService {
     this.heartbeatInterval = setInterval(async () => {
       try {
         // Update timestamp for all active jobs
-        for (const [jobId, jobState] of this.activeJobs.entries()) {
+        for (const [_jobId, jobState] of this.activeJobs.entries()) {
           jobState.timestamp = Date.now();
           await this.persistJobState(jobState);
         }
@@ -267,7 +265,7 @@ export class JobRecoveryService {
     }
 
     // Mark all active jobs as stalled for recovery on next startup
-    for (const [jobId, jobState] of this.activeJobs.entries()) {
+    for (const [_jobId, jobState] of this.activeJobs.entries()) {
       jobState.status = 'stalled';
       jobState.timestamp = Date.now();
       await this.persistJobState(jobState);
@@ -295,7 +293,7 @@ export class JobRecoveryService {
               cleanedCount++;
             }
           }
-        } catch (error) {
+        } catch (cleanupError) {
           // Remove corrupted state
           await this.redis.del(key);
           cleanedCount++;

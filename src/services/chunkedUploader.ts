@@ -1,6 +1,5 @@
 import axios from 'axios';
 import fs from 'fs';
-import path from 'path';
 import { env } from '../config/env';
 import { logger } from '../utils/logger';
 
@@ -226,13 +225,8 @@ export class ChunkedUploader {
         // Exponential backoff
         await new Promise(resolve => setTimeout(resolve, Math.pow(2, retries) * 1000));
         
-        // Recreate the stream for retry
-        const newChunkStream = fs.createReadStream(filePath, {
-          start,
-          end: end - 1,
-          highWaterMark: env.STREAM_BUFFER_SIZE * 1024,
-        });
         // Note: In a real implementation, you'd need to reset the stream properly
+        logger.debug('Preparing retry for chunk', { fileName, chunkIndex });
       }
     }
   }
