@@ -14,6 +14,7 @@ import { errorHandler, notFoundHandler } from './api/middleware/errorHandler';
 import { startImportWorker, closeImportQueue } from './queues/importQueue';
 import { createDashboard } from './web/dashboard';
 import { getJobRecoveryService } from './services/jobRecovery';
+import { getMemoryMonitor } from './utils/memoryMonitor';
 
 // Import routes
 import importRoutes from './api/routes/import';
@@ -95,6 +96,10 @@ jobRecoveryService.initialize().catch((error) => {
   logger.error('Failed to initialize job recovery service', { error });
 });
 
+// Initialize memory monitoring
+const memoryMonitor = getMemoryMonitor();
+memoryMonitor.startMonitoring();
+
 // Start background workers
 startImportWorker();
 
@@ -117,6 +122,9 @@ async function gracefulShutdown(signal: string): Promise<void> {
   });
 
   try {
+    // Stop memory monitoring
+    memoryMonitor.stopMonitoring();
+    
     // Shutdown job recovery service (saves active job states)
     await jobRecoveryService.shutdown();
     

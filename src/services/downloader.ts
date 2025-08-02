@@ -89,8 +89,11 @@ export class Downloader {
     filePath: string,
     onProgress?: (progress: DownloadProgress) => void
   ): Promise<DownloadResult> {
+    // Use very small buffer size to minimize RAM usage for large files
+    const bufferSize = Math.min(env.STREAM_BUFFER_SIZE * 1024, 8192); // Max 8KB buffer
+    
     const writer = fs.createWriteStream(filePath, {
-      highWaterMark: env.STREAM_BUFFER_SIZE * 1024, // Use configurable buffer size
+      highWaterMark: bufferSize,
     });
 
     try {

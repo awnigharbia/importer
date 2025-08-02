@@ -107,27 +107,51 @@ export class BunnyStorage {
     fileSize: number,
     onProgress?: (progress: UploadProgress) => void
   ): Promise<void> {
+    // Use very small buffer size for large files to minimize RAM usage
+    const bufferSize = Math.min(env.STREAM_BUFFER_SIZE * 1024, 8192); // Max 8KB buffer
+    
     const fileStream = fs.createReadStream(filePath, {
-      highWaterMark: env.STREAM_BUFFER_SIZE * 1024, // Use configurable buffer size
+      highWaterMark: bufferSize,
     });
+    
     let uploadedBytes = 0;
+    let lastProgressUpdate = 0;
+    const PROGRESS_UPDATE_INTERVAL = 1024 * 1024; // Update progress every 1MB
 
-    // Create a transform stream to track progress
+    // Create a minimal transform stream to track progress
     const { Transform } = await import('stream');
     const progressStream = new Transform({
-      highWaterMark: env.STREAM_BUFFER_SIZE * 1024, // Match buffer size
+      highWaterMark: bufferSize,
+      objectMode: false,
       transform(chunk, _encoding, callback) {
         uploadedBytes += chunk.length;
-        if (onProgress) {
+        
+        // Throttle progress updates to reduce overhead
+        if (onProgress && (uploadedBytes - lastProgressUpdate) >= PROGRESS_UPDATE_INTERVAL) {
           const progress: UploadProgress = {
             uploadedBytes,
             totalBytes: fileSize,
             percentage: Math.round((uploadedBytes / fileSize) * 100),
           };
-          onProgress(progress);
+          
+          // Use setImmediate to prevent blocking
+          setImmediate(() => onProgress(progress));
+          lastProgressUpdate = uploadedBytes;
         }
+        
         callback(null, chunk);
       },
+    });
+
+    // Add error handlers to streams to prevent crashes
+    fileStream.on('error', (error) => {
+      logger.error('File stream error during upload', { error: error.message });
+      progressStream.destroy();
+    });
+
+    progressStream.on('error', (error) => {
+      logger.error('Progress stream error during upload', { error: error.message });
+      fileStream.destroy();
     });
 
     try {
@@ -143,23 +167,75 @@ export class BunnyStorage {
         maxBodyLength: Infinity,
         maxContentLength: Infinity,
         timeout: env.DOWNLOAD_TIMEOUT_MS * 2, // Double timeout for uploads
+        
+        // Add resilience options
+        validateStatus: (status) => status >= 200 && status < 300,
+        maxRedirects: 3,
+        
+        // Enable compression if server supports it
+        decompress: true,
       });
 
-      if (response.status !== 201 && response.status !== 200) {
-        throw new Error(`Upload failed with status: ${response.status}`);
+      // Send final progress update
+      if (onProgress) {
+        setImmediate(() => onProgress({
+          uploadedBytes: fileSize,
+          totalBytes: fileSize,
+          percentage: 100,
+        }));
       }
+      
+      logger.debug('Upload completed successfully', { 
+        status: response.status,
+        uploadedBytes: fileSize 
+      });
+      
     } catch (error) {
+      // Clean up streams on error
+      if (fileStream && !fileStream.destroyed) {
+        fileStream.destroy();
+      }
+      if (progressStream && !progressStream.destroyed) {
+        progressStream.destroy();
+      }
+      
       if (axios.isAxiosError(error)) {
         if (error.response) {
-          throw new Error(`Bunny Storage API error: ${error.response.status} - ${error.response.data}`);
+          const errorMsg = `Bunny Storage API error: ${error.response.status} - ${JSON.stringify(error.response.data)}`;
+          logger.error('Upload API error', { 
+            status: error.response.status, 
+            data: error.response.data,
+            uploadedBytes 
+          });
+          throw new Error(errorMsg);
         } else if (error.request) {
-          throw new Error('No response from Bunny Storage API');
+          logger.error('Upload network error', { uploadedBytes });
+          throw new Error('No response from Bunny Storage API - network error');
+        } else if (error.code === 'ECONNRESET' || error.code === 'ETIMEDOUT') {
+          logger.error('Upload connection error', { code: error.code, uploadedBytes });
+          throw new Error(`Connection error during upload: ${error.code}`);
         }
       }
+      
+      logger.error('Upload failed with unknown error', { 
+        error: error instanceof Error ? error.message : String(error),
+        uploadedBytes 
+      });
       throw error;
     } finally {
-      fileStream.destroy();
-      progressStream.destroy();
+      // Ensure streams are always cleaned up
+      try {
+        if (fileStream && !fileStream.destroyed) {
+          fileStream.destroy();
+        }
+        if (progressStream && !progressStream.destroyed) {
+          progressStream.destroy();
+        }
+      } catch (cleanupError) {
+        logger.warn('Error during stream cleanup', { 
+          error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError) 
+        });
+      }
     }
   }
 

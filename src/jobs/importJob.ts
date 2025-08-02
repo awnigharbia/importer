@@ -10,6 +10,7 @@ import { sendTelegramNotification } from '../services/telegram';
 import { logger } from '../utils/logger';
 import { env } from '../config/env';
 import { getJobRecoveryService } from '../services/jobRecovery';
+import { getMemoryMonitor } from '../utils/memoryMonitor';
 
 export async function processImportJob(
   job: Job<ImportJobData, ImportJobResult>
@@ -20,12 +21,16 @@ export async function processImportJob(
   const bunnyStorage = new BunnyStorage();
   const chunkedUploader = new ChunkedUploader();
   const recoveryService = getJobRecoveryService();
+  const memoryMonitor = getMemoryMonitor();
 
   let downloadResult;
   let tempFilePath: string | null = null;
   let tempFiles: string[] = [];
 
   try {
+    // Log initial memory usage
+    memoryMonitor.logCurrentMemoryUsage();
+    
     // Track job for recovery
     await recoveryService.trackJob(job, tempFiles);
     // Download stage
@@ -67,6 +72,10 @@ export async function processImportJob(
     tempFilePath = downloadResult.filePath;
     tempFiles = [tempFilePath]; // Track temp files for cleanup
     
+    // Log memory usage after download
+    logger.info('Download completed, checking memory usage');
+    memoryMonitor.logCurrentMemoryUsage();
+    
     // Update recovery state with download progress
     await recoveryService.updateJobProgress(job.id!, {
       stage: 'downloading',
@@ -79,69 +88,43 @@ export async function processImportJob(
     const baseName = path.basename(downloadResult.fileName, ext);
     const uniqueFileName = `${baseName}-${nanoid(8)}${ext}`;
 
-    // Upload stage - Use chunked uploader for large files
+    // Upload stage - Use resilient single file upload
     await job.updateProgress({
       stage: 'uploading',
       percentage: 0,
       message: 'Starting upload to Bunny Storage...',
     } as ImportJobProgress);
 
-    const fileSize = downloadResult.fileSize;
-    const useChunkedUpload = fileSize > 100 * 1024 * 1024; // Use chunked for files > 100MB
+    const uploadResult = await bunnyStorage.upload({
+      filePath: tempFilePath,
+      fileName: uniqueFileName,
+      onProgress: async (progress) => {
+        const progressData = {
+          stage: 'uploading',
+          percentage: progress.percentage,
+          message: `Uploading: ${progress.percentage}%`,
+        };
+        await job.updateProgress(progressData as ImportJobProgress);
+        
+        // Update recovery state with upload progress
+        await recoveryService.updateJobProgress(job.id!, progressData, tempFiles);
+      },
+    });
 
-    let uploadResult;
-    if (useChunkedUpload) {
-      logger.info('Using chunked upload for large file', { fileSize, fileName: uniqueFileName });
-      uploadResult = await chunkedUploader.upload({
-        filePath: tempFilePath,
-        fileName: uniqueFileName,
-        onProgress: async (progress) => {
-          const message = progress.totalChunks 
-            ? `Uploading chunk ${progress.currentChunk}/${progress.totalChunks}: ${progress.percentage}%`
-            : `Uploading: ${progress.percentage}%`;
-          const progressData = {
-            stage: 'uploading',
-            percentage: progress.percentage,
-            message,
-          };
-          await job.updateProgress(progressData as ImportJobProgress);
-          
-          // Update recovery state with upload progress
-          await recoveryService.updateJobProgress(job.id!, progressData, tempFiles);
-        },
-      });
-    } else {
-      uploadResult = await bunnyStorage.upload({
-        filePath: tempFilePath,
-        fileName: uniqueFileName,
-        onProgress: async (progress) => {
-          const progressData = {
-            stage: 'uploading',
-            percentage: progress.percentage,
-            message: `Uploading: ${progress.percentage}%`,
-          };
-          await job.updateProgress(progressData as ImportJobProgress);
-          
-          // Update recovery state with upload progress
-          await recoveryService.updateJobProgress(job.id!, progressData, tempFiles);
-        },
-      });
-
-      // Verify CDN URL is accessible
-      setTimeout(async () => {
-        try {
-          const isAccessible = await bunnyStorage.verifyCdnAccess(uniqueFileName);
-          if (!isAccessible) {
-            logger.warn('CDN URL verification failed, file may not be immediately accessible', {
-              fileName: uniqueFileName,
-              cdnUrl: uploadResult.cdnUrl
-            });
-          }
-        } catch (error) {
-          logger.warn('CDN verification error', { error });
+    // Verify CDN URL is accessible
+    setTimeout(async () => {
+      try {
+        const isAccessible = await bunnyStorage.verifyCdnAccess(uniqueFileName);
+        if (!isAccessible) {
+          logger.warn('CDN URL verification failed, file may not be immediately accessible', {
+            fileName: uniqueFileName,
+            cdnUrl: uploadResult.cdnUrl
+          });
         }
-      }, 5000); // Wait 5 seconds for CDN propagation
-    }
+      } catch (error) {
+        logger.warn('CDN verification error', { error });
+      }
+    }, 5000); // Wait 5 seconds for CDN propagation
 
     // Clean up temporary file
     if (type === 'gdrive') {
@@ -167,6 +150,10 @@ export async function processImportJob(
       });
     }
 
+    // Log final memory usage
+    logger.info('Job completed, final memory check');
+    memoryMonitor.logCurrentMemoryUsage();
+    
     // Mark job as completed in recovery service
     await recoveryService.completeJob(job.id!);
 

@@ -41,7 +41,7 @@ const envSchema = z.object({
 
   // Node.js Memory (optimized for streaming large files on 4GB server)
   NODE_MAX_OLD_SPACE_SIZE: z.string().default('3072').transform(Number), // 3GB heap (75% of 4GB)
-  STREAM_BUFFER_SIZE: z.string().default('16').transform(Number), // 16KB buffer chunks for memory efficiency
+  STREAM_BUFFER_SIZE: z.string().default('8').transform(Number), // 8KB buffer chunks for maximum memory efficiency
 
   // Rate limiting
   RATE_LIMIT_WINDOW_MS: z.string().default('900000').transform(Number),
