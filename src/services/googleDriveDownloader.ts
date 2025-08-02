@@ -23,7 +23,7 @@ export class GoogleDriveDownloader {
   private drive: any;
 
   constructor() {
-    const key = require('../../../google-key.json');
+    const key = require('../../google-key.json');
 
     this.auth = new google.auth.GoogleAuth({
       credentials: {
