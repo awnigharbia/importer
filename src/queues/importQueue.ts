@@ -34,7 +34,7 @@ let queueEvents: QueueEvents | null = null;
 export function getImportQueue(): Queue<ImportJobData, ImportJobResult> {
   if (!importQueue) {
     const connection = getRedisClient();
-    
+
     importQueue = new Queue<ImportJobData, ImportJobResult>('import', {
       connection,
       defaultJobOptions: {
@@ -85,7 +85,7 @@ export function startImportWorker(): Worker<ImportJobData, ImportJobResult> {
             attemptsMade: job.attemptsMade,
             maxAttempts: job.opts.attempts,
           });
-          
+
           Sentry.captureException(error, {
             tags: {
               jobId: job.id,
@@ -98,7 +98,7 @@ export function startImportWorker(): Worker<ImportJobData, ImportJobResult> {
               requestId: job.data.requestId,
             },
           });
-          
+
           // For certain types of errors, don't retry
           if (error instanceof Error) {
             const nonRetryableErrors = [
@@ -108,30 +108,30 @@ export function startImportWorker(): Worker<ImportJobData, ImportJobResult> {
               'access denied',
               'unauthorized',
             ];
-            
-            const shouldNotRetry = nonRetryableErrors.some(pattern => 
+
+            const shouldNotRetry = nonRetryableErrors.some(pattern =>
               error.message.toLowerCase().includes(pattern.toLowerCase())
             );
-            
+
             if (shouldNotRetry) {
               logger.info('Job failed with non-retryable error, not retrying', {
                 jobId: job.id,
                 error: error.message,
               });
-              
+
               // Mark job as failed permanently by throwing a specific error
               const permanentError = new Error(`Permanent failure: ${error.message}`);
               (permanentError as any).name = 'PermanentFailure';
               throw permanentError;
             }
           }
-          
+
           throw error;
         }
       },
       {
         connection,
-        concurrency: 1, // Single job for 10GB+ files on 4GB server
+        concurrency: 10, // Single job for 10GB+ files on 4GB server
         maxStalledCount: 5, // Increased for better recovery
         stalledInterval: 60000, // Longer stall check for large files
         lockDuration: env.JOB_TIMEOUT_MS,
