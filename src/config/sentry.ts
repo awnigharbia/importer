@@ -9,7 +9,7 @@ export function initSentry(): void {
       tracesSampleRate: env.NODE_ENV === 'production' ? 0.1 : 1.0,
       integrations: [
         new Sentry.Integrations.Http({ tracing: true }),
-        new Sentry.Integrations.Express({ app: true }),
+        new Sentry.Integrations.Express(),
       ],
     });
   }

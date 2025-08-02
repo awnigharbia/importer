@@ -7,7 +7,7 @@ let redis: Redis | null = null;
 export function getRedisClient(): Redis {
   if (!redis) {
     redis = new Redis(env.REDIS_URL, {
-      maxRetriesPerRequest: 3,
+      maxRetriesPerRequest: null, // Required for BullMQ blocking operations
       enableReadyCheck: true,
       reconnectOnError: (err) => {
         logger.error('Redis reconnect on error', { error: err.message });
