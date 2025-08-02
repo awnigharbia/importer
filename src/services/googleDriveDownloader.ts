@@ -1,7 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 import { nanoid } from 'nanoid';
-import { downloadFile } from 'simple-googledrive-downloader';
+import { google } from 'googleapis';
+import { OAuth2Client } from 'google-auth-library';
 import { env } from '../config/env';
 import { logger } from '../utils/logger';
 import { parseGoogleDriveUrl } from '../utils/googleDrive';
@@ -28,10 +29,53 @@ export interface DownloadResult {
 
 export class GoogleDriveDownloader {
   private tempDir: string;
+  private drive: any;
+  private auth: OAuth2Client | string | undefined;
 
   constructor() {
     this.tempDir = path.resolve(env.TEMP_DIR);
     this.ensureTempDir();
+    
+    // Initialize authentication
+    this.auth = this.setupAuth();
+    
+    // Initialize Google Drive API
+    if (this.auth) {
+      this.drive = google.drive({ 
+        version: 'v3',
+        auth: this.auth
+      });
+    } else {
+      this.drive = google.drive({ 
+        version: 'v3'
+      });
+    }
+  }
+
+  private setupAuth(): OAuth2Client | string | undefined {
+    // If we have OAuth2 credentials, use them
+    if (env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET && env.GOOGLE_REFRESH_TOKEN) {
+      const oauth2Client = new OAuth2Client(
+        env.GOOGLE_CLIENT_ID,
+        env.GOOGLE_CLIENT_SECRET
+      );
+      
+      oauth2Client.setCredentials({
+        refresh_token: env.GOOGLE_REFRESH_TOKEN
+      });
+      
+      logger.info('Using OAuth2 authentication for Google Drive');
+      return oauth2Client;
+    }
+    
+    // Otherwise, use API key if available
+    if (env.GOOGLE_API_KEY) {
+      logger.info('Using API key authentication for Google Drive');
+      return env.GOOGLE_API_KEY;
+    }
+    
+    logger.warn('No Google Drive authentication configured');
+    return undefined;
   }
 
   private ensureTempDir(): void {
@@ -54,9 +98,9 @@ export class GoogleDriveDownloader {
       const tempFileName = `${nanoid()}_${suggestedFileName}`;
       const tempFilePath = path.join(this.tempDir, tempFileName);
 
-      // Download the file using the @abrifq/google-drive-downloader package
+      // Download the file using the copy-download-delete approach
       const result = await retry(
-        () => this.performDownload(driveInfo.fileId, tempFilePath, onProgress),
+        () => this.performCopyDownloadDelete(driveInfo.fileId, tempFilePath, onProgress),
         {
           maxAttempts: env.MAX_RETRY_ATTEMPTS,
           delay: 2000,
@@ -79,113 +123,156 @@ export class GoogleDriveDownloader {
     }
   }
 
-  private async performDownload(
+  private async performCopyDownloadDelete(
     fileId: string,
     filePath: string,
-    _onProgress?: (progress: DownloadProgress) => void
+    onProgress?: (progress: DownloadProgress) => void
   ): Promise<DownloadResult> {
+    let copiedFileId: string | null = null;
+    
     try {
-      logger.info('Downloading Google Drive file using simple-googledrive-downloader', { fileId });
-      
-      // Extract directory, filename and extension from filePath
-      const dirPath = path.dirname(filePath);
-      const fullFileName = path.basename(filePath);
-      const extIndex = fullFileName.lastIndexOf('.');
-      const filename = extIndex > 0 ? fullFileName.substring(0, extIndex) : fullFileName;
-      const extension = extIndex > 0 ? fullFileName.substring(extIndex + 1) : 'mp4';
-      
-      // Use simple-googledrive-downloader to download the file
-      const downloadedPath = await downloadFile(fileId, dirPath, filename, extension);
-      
-      if (!downloadedPath) {
-        throw new Error('Download failed - simple-googledrive-downloader returned null');
+      // If OAuth2 is configured, copy the file first
+      if (this.auth instanceof OAuth2Client) {
+        logger.info('Copying file to user Drive', { fileId });
+        
+        // Get original file metadata
+        const originalFile = await this.drive.files.get({
+          fileId: fileId,
+          fields: 'id, name, size, mimeType',
+          supportsAllDrives: true,
+        });
+        
+        // Copy the file to user's Drive
+        const copyResponse = await this.drive.files.copy({
+          fileId: fileId,
+          requestBody: {
+            name: `temp_${originalFile.data.name || 'download'}`,
+          },
+          supportsAllDrives: true,
+          fields: 'id',
+        });
+        
+        copiedFileId = copyResponse.data.id;
+        logger.info('File copied to user Drive', { copiedFileId });
+        
+        // Download the copied file
+        const result = await this.downloadFile(copiedFileId!, filePath, onProgress);
+        
+        return result;
+      } else {
+        // Direct download without copying
+        logger.info('Downloading file directly (no OAuth2)', { fileId });
+        return await this.downloadFile(fileId, filePath, onProgress);
       }
-
-      // The downloaded file might be at downloadedPath instead of filePath
-      // Check both locations
-      const actualFilePath = fs.existsSync(downloadedPath) ? downloadedPath : filePath;
-      
-      if (!fs.existsSync(actualFilePath)) {
-        throw new Error('File download failed - file not found after download');
+    } finally {
+      // Clean up copied file if it exists
+      if (copiedFileId && this.auth instanceof OAuth2Client) {
+        try {
+          logger.info('Cleaning up copied file', { copiedFileId });
+          await this.drive.files.delete({
+            fileId: copiedFileId,
+            supportsAllDrives: true,
+          });
+          logger.info('Copied file deleted successfully', { copiedFileId });
+        } catch (cleanupError) {
+          logger.error('Failed to cleanup copied file', { 
+            copiedFileId, 
+            error: cleanupError 
+          });
+        }
       }
-
-      const stats = fs.statSync(actualFilePath);
-      const fileName = path.basename(actualFilePath);
-
-      // Validate file
-      if (stats.size === 0) {
-        throw new Error('Downloaded file is empty');
-      }
-
-      // Check file size limit
-      if (stats.size > env.MAX_FILE_SIZE_MB * 1024 * 1024) {
-        // Clean up the file before throwing error
-        fs.unlinkSync(filePath);
-        throw new Error(`File size exceeds limit of ${env.MAX_FILE_SIZE_MB}MB`);
-      }
-
-      // Basic video file validation by extension
-      const ext = path.extname(fileName).toLowerCase();
-      const videoExtensions = ['.mp4', '.avi', '.mov', '.mkv', '.wmv', '.flv', '.webm', '.m4v', '.3gp'];
-      
-      if (!videoExtensions.includes(ext)) {
-        logger.warn('Downloaded file may not be a video based on extension', { fileName, ext });
-      }
-
-      // Move file to expected location if needed
-      if (actualFilePath !== filePath && fs.existsSync(actualFilePath)) {
-        fs.renameSync(actualFilePath, filePath);
-      }
-
-      logger.info('Google Drive file downloaded successfully', {
-        fileId,
-        filePath,
-        fileSize: stats.size,
-        fileName,
-      });
-
-      return {
-        filePath,
-        fileName,
-        fileSize: stats.size,
-        mimeType: this.getMimeTypeFromExtension(ext),
-      };
-    } catch (error) {
-      // Clean up on failure
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-      }
-      
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      
-      // Handle common Google Drive errors
-      if (errorMessage.includes('403') || errorMessage.includes('Forbidden')) {
-        throw new Error('File access denied - file may be private or require permissions');
-      } else if (errorMessage.includes('404') || errorMessage.includes('Not Found')) {
-        throw new Error('File not found - check if the Google Drive URL is correct');
-      } else if (errorMessage.includes('quota')) {
-        throw new Error('Google Drive download quota exceeded - try again later');
-      }
-      
-      throw new Error(`Google Drive download failed: ${errorMessage}`);
     }
   }
 
-
-  private getMimeTypeFromExtension(ext: string): string {
-    const mimeMap: { [key: string]: string } = {
-      '.mp4': 'video/mp4',
-      '.avi': 'video/x-msvideo',
-      '.mov': 'video/quicktime',
-      '.mkv': 'video/x-matroska',
-      '.wmv': 'video/x-ms-wmv',
-      '.flv': 'video/x-flv',
-      '.webm': 'video/webm',
-      '.m4v': 'video/x-m4v',
-      '.3gp': 'video/3gpp',
-    };
+  private async downloadFile(
+    fileId: string,
+    filePath: string,
+    onProgress?: (progress: DownloadProgress) => void
+  ): Promise<DownloadResult> {
+    logger.info('Downloading Google Drive file', { fileId });
     
-    return mimeMap[ext] || 'video/mp4';
+    // Get file metadata first
+    const metadataResponse = await this.drive.files.get({
+      fileId: fileId,
+      fields: 'id, name, size, mimeType',
+      supportsAllDrives: true,
+    }).catch((error: any) => {
+      logger.warn('Could not fetch file metadata', { error: error.message });
+      return null;
+    });
+
+    const fileSize = metadataResponse?.data?.size ? parseInt(metadataResponse.data.size) : 0;
+    const fileName = metadataResponse?.data?.name || path.basename(filePath);
+    const mimeType = metadataResponse?.data?.mimeType || 'video/mp4';
+
+    // Download the file
+    const dest = fs.createWriteStream(filePath);
+    let downloadedBytes = 0;
+
+    const response = await this.drive.files.get(
+      {
+        fileId: fileId,
+        alt: 'media',
+        supportsAllDrives: true,
+      },
+      {
+        responseType: 'stream',
+      }
+    );
+
+    // Handle progress
+    response.data.on('data', (chunk: Buffer) => {
+      downloadedBytes += chunk.length;
+      if (onProgress && fileSize > 0) {
+        const percentage = Math.round((downloadedBytes / fileSize) * 100);
+        onProgress({
+          downloadedBytes,
+          totalBytes: fileSize,
+          percentage,
+        });
+      }
+    });
+
+    // Pipe to file
+    response.data.pipe(dest);
+
+    // Wait for download completion
+    await new Promise<void>((resolve, reject) => {
+      dest.on('finish', resolve);
+      dest.on('error', reject);
+      response.data.on('error', reject);
+    });
+
+    // Validate the downloaded file
+    if (!fs.existsSync(filePath)) {
+      throw new Error('File download failed - file not found after download');
+    }
+
+    const stats = fs.statSync(filePath);
+    
+    if (stats.size === 0) {
+      throw new Error('Downloaded file is empty');
+    }
+
+    // Check file size limit
+    if (stats.size > env.MAX_FILE_SIZE_MB * 1024 * 1024) {
+      fs.unlinkSync(filePath);
+      throw new Error(`File size exceeds limit of ${env.MAX_FILE_SIZE_MB}MB`);
+    }
+
+    logger.info('Google Drive file downloaded successfully', {
+      fileId,
+      filePath,
+      fileSize: stats.size,
+      fileName,
+    });
+
+    return {
+      filePath,
+      fileName,
+      fileSize: stats.size,
+      mimeType,
+    };
   }
 
   cleanupFile(filePath: string): void {
