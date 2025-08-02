@@ -3,6 +3,7 @@ import path from 'path';
 import { nanoid } from 'nanoid';
 import { ImportJobData, ImportJobResult, ImportJobProgress } from '../queues/importQueue';
 import { Downloader } from '../services/downloader';
+import { GoogleDriveDownloader } from '../services/googleDriveDownloader';
 import { BunnyStorage } from '../services/bunnyStorage';
 import { sendTelegramNotification } from '../services/telegram';
 import { logger } from '../utils/logger';
@@ -13,6 +14,7 @@ export async function processImportJob(
 ): Promise<ImportJobResult> {
   const { url, type, fileName } = job.data;
   const downloader = new Downloader();
+  const googleDriveDownloader = new GoogleDriveDownloader();
   const bunnyStorage = new BunnyStorage();
 
   let downloadResult;
@@ -26,18 +28,34 @@ export async function processImportJob(
       message: 'Starting download...',
     } as ImportJobProgress);
 
-    downloadResult = await downloader.download({
-      url,
-      type,
-      fileName,
-      onProgress: async (progress) => {
-        await job.updateProgress({
-          stage: 'downloading',
-          percentage: progress.percentage,
-          message: `Downloading: ${progress.percentage}%`,
-        } as ImportJobProgress);
-      },
-    });
+    if (type === 'gdrive') {
+      // Use Google Drive API for Google Drive files
+      downloadResult = await googleDriveDownloader.download({
+        url,
+        fileName,
+        onProgress: async (progress) => {
+          await job.updateProgress({
+            stage: 'downloading',
+            percentage: progress.percentage,
+            message: `Downloading from Google Drive: ${progress.percentage}%`,
+          } as ImportJobProgress);
+        },
+      });
+    } else {
+      // Use regular downloader for direct URLs
+      downloadResult = await downloader.download({
+        url,
+        type,
+        fileName,
+        onProgress: async (progress) => {
+          await job.updateProgress({
+            stage: 'downloading',
+            percentage: progress.percentage,
+            message: `Downloading: ${progress.percentage}%`,
+          } as ImportJobProgress);
+        },
+      });
+    }
 
     tempFilePath = downloadResult.filePath;
 
@@ -66,7 +84,11 @@ export async function processImportJob(
     });
 
     // Clean up temporary file
-    downloader.cleanupFile(tempFilePath);
+    if (type === 'gdrive') {
+      googleDriveDownloader.cleanupFile(tempFilePath);
+    } else {
+      downloader.cleanupFile(tempFilePath);
+    }
 
     const result: ImportJobResult = {
       success: true,
@@ -89,7 +111,11 @@ export async function processImportJob(
   } catch (error) {
     // Clean up on failure
     if (tempFilePath) {
-      downloader.cleanupFile(tempFilePath);
+      if (type === 'gdrive') {
+        googleDriveDownloader.cleanupFile(tempFilePath);
+      } else {
+        downloader.cleanupFile(tempFilePath);
+      }
     }
 
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';

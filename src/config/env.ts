@@ -42,6 +42,9 @@ const envSchema = z.object({
   // Rate limiting
   RATE_LIMIT_WINDOW_MS: z.string().default('900000').transform(Number),
   RATE_LIMIT_MAX_REQUESTS: z.string().default('100').transform(Number),
+
+  // Google Drive API
+  GOOGLE_API_KEY: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
