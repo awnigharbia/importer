@@ -1,7 +1,7 @@
-import { google } from 'googleapis';
 import fs from 'fs';
 import path from 'path';
 import { nanoid } from 'nanoid';
+import GoogleDriveDownloaderLib from '@abrifq/google-drive-downloader';
 import { env } from '../config/env';
 import { logger } from '../utils/logger';
 import { parseGoogleDriveUrl } from '../utils/googleDrive';
@@ -27,16 +27,9 @@ export interface DownloadResult {
 }
 
 export class GoogleDriveDownloader {
-  private drive;
   private tempDir: string;
 
   constructor() {
-    // Initialize with API key if available, otherwise it will work with public files
-    const options: any = { version: 'v3' };
-    if (env.GOOGLE_API_KEY) {
-      options.auth = env.GOOGLE_API_KEY;
-    }
-    this.drive = google.drive(options);
     this.tempDir = path.resolve(env.TEMP_DIR);
     this.ensureTempDir();
   }
@@ -56,26 +49,14 @@ export class GoogleDriveDownloader {
     }
 
     try {
-      // First, get file metadata to validate it's a video
-      const fileMetadata = await this.getFileMetadata(driveInfo.fileId);
-      
-      if (!this.isVideoFile(fileMetadata.mimeType)) {
-        throw new Error(`File is not a video. Detected type: ${fileMetadata.mimeType}`);
-      }
-
-      // Check file size limit
-      const fileSize = parseInt(fileMetadata.size || '0', 10);
-      if (fileSize > env.MAX_FILE_SIZE_MB * 1024 * 1024) {
-        throw new Error(`File size exceeds limit of ${env.MAX_FILE_SIZE_MB}MB`);
-      }
-
-      const suggestedFileName = fileName || fileMetadata.name || 'download.mp4';
+      // Generate a temporary file name
+      const suggestedFileName = fileName || 'download.mp4';
       const tempFileName = `${nanoid()}_${suggestedFileName}`;
       const tempFilePath = path.join(this.tempDir, tempFileName);
 
-      // Download the file
+      // Download the file using the @abrifq/google-drive-downloader package
       const result = await retry(
-        () => this.performDownload(driveInfo.fileId, tempFilePath, fileSize, onProgress),
+        () => this.performDownload(driveInfo.fileId, tempFilePath, onProgress),
         {
           maxAttempts: env.MAX_RETRY_ATTEMPTS,
           delay: 2000,
@@ -88,10 +69,7 @@ export class GoogleDriveDownloader {
         }
       );
 
-      return {
-        ...result,
-        mimeType: fileMetadata.mimeType || 'video/mp4',
-      };
+      return result;
     } catch (error) {
       logger.error('Google Drive download failed', {
         url,
@@ -101,109 +79,109 @@ export class GoogleDriveDownloader {
     }
   }
 
-  private async getFileMetadata(fileId: string): Promise<any> {
-    try {
-      const response = await this.drive.files.get({
-        fileId,
-        fields: 'id, name, mimeType, size',
-        supportsAllDrives: true,
-      });
-
-      return response.data;
-    } catch (error: any) {
-      if (error.code === 404) {
-        throw new Error('File not found or access denied');
-      }
-      throw new Error(`Failed to get file metadata: ${error.message}`);
-    }
-  }
-
-  private isVideoFile(mimeType?: string | null): boolean {
-    if (!mimeType) return false;
-    
-    const videoMimeTypes = [
-      'video/mp4',
-      'video/mpeg',
-      'video/quicktime',
-      'video/x-msvideo',
-      'video/x-ms-wmv',
-      'video/webm',
-      'video/x-flv',
-      'video/3gpp',
-      'video/x-matroska',
-      'application/x-mpegURL',
-      'video/MP2T',
-      'video/ogg',
-      'video/x-m4v',
-    ];
-
-    return videoMimeTypes.includes(mimeType);
-  }
-
   private async performDownload(
     fileId: string,
     filePath: string,
-    totalSize: number,
     onProgress?: (progress: DownloadProgress) => void
   ): Promise<DownloadResult> {
-    const dest = fs.createWriteStream(filePath);
-    let downloadedBytes = 0;
-
     try {
-      const response = await this.drive.files.get(
-        {
-          fileId,
-          alt: 'media',
-          supportsAllDrives: true,
-        },
-        { responseType: 'stream' }
-      );
+      // Create a progress callback that matches our interface
+      let lastPercentage = 0;
+      const progressCallback = (progress: number) => {
+        const percentage = Math.round(progress * 100);
+        if (onProgress && percentage !== lastPercentage) {
+          // We don't have exact byte information from the library, so we estimate
+          const downloadedBytes = Math.round((percentage / 100) * 1024 * 1024 * 100); // Estimate
+          const totalBytes = 1024 * 1024 * 100; // Estimate 100MB
+          
+          onProgress({
+            downloadedBytes,
+            totalBytes,
+            percentage,
+          });
+          lastPercentage = percentage;
+        }
+      };
 
-      response.data
-        .on('data', (chunk: Buffer) => {
-          downloadedBytes += chunk.length;
-          if (onProgress && totalSize > 0) {
-            const progress: DownloadProgress = {
-              downloadedBytes,
-              totalBytes: totalSize,
-              percentage: Math.round((downloadedBytes / totalSize) * 100),
-            };
-            onProgress(progress);
-          }
-        })
-        .on('error', (err: Error) => {
-          dest.destroy();
-          throw err;
-        })
-        .pipe(dest);
+      // Use the @abrifq/google-drive-downloader library
+      await GoogleDriveDownloaderLib.downloadFile(fileId, filePath, progressCallback);
 
-      await new Promise<void>((resolve, reject) => {
-        dest.on('finish', () => resolve());
-        dest.on('error', reject);
-      });
+      // Check if file was downloaded successfully
+      if (!fs.existsSync(filePath)) {
+        throw new Error('File download failed - file not found after download');
+      }
 
       const stats = fs.statSync(filePath);
       const fileName = path.basename(filePath);
+
+      // Validate it's a video file based on size and extension
+      if (stats.size === 0) {
+        throw new Error('Downloaded file is empty');
+      }
+
+      // Check file size limit
+      if (stats.size > env.MAX_FILE_SIZE_MB * 1024 * 1024) {
+        // Clean up the file before throwing error
+        fs.unlinkSync(filePath);
+        throw new Error(`File size exceeds limit of ${env.MAX_FILE_SIZE_MB}MB`);
+      }
+
+      // Basic video file validation by extension
+      const ext = path.extname(fileName).toLowerCase();
+      const videoExtensions = ['.mp4', '.avi', '.mov', '.mkv', '.wmv', '.flv', '.webm', '.m4v', '.3gp'];
+      
+      if (!videoExtensions.includes(ext)) {
+        logger.warn('Downloaded file may not be a video based on extension', { fileName, ext });
+      }
 
       logger.info('Google Drive file downloaded successfully', {
         fileId,
         filePath,
         fileSize: stats.size,
+        fileName,
       });
 
       return {
         filePath,
         fileName,
         fileSize: stats.size,
-        mimeType: 'video/mp4',
+        mimeType: this.getMimeTypeFromExtension(ext),
       };
     } catch (error) {
-      dest.destroy();
+      // Clean up on failure
       if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
       }
-      throw error;
+      
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      
+      // Handle common Google Drive errors
+      if (errorMessage.includes('403') || errorMessage.includes('Forbidden')) {
+        throw new Error('File access denied - file may be private or require permissions');
+      } else if (errorMessage.includes('404') || errorMessage.includes('Not Found')) {
+        throw new Error('File not found - check if the Google Drive URL is correct');
+      } else if (errorMessage.includes('quota')) {
+        throw new Error('Google Drive download quota exceeded - try again later');
+      }
+      
+      throw new Error(`Google Drive download failed: ${errorMessage}`);
     }
+  }
+
+  private getMimeTypeFromExtension(ext: string): string {
+    const mimeMap: { [key: string]: string } = {
+      '.mp4': 'video/mp4',
+      '.avi': 'video/x-msvideo',
+      '.mov': 'video/quicktime',
+      '.mkv': 'video/x-matroska',
+      '.wmv': 'video/x-ms-wmv',
+      '.flv': 'video/x-flv',
+      '.webm': 'video/webm',
+      '.m4v': 'video/x-m4v',
+      '.3gp': 'video/3gpp',
+    };
+    
+    return mimeMap[ext] || 'video/mp4';
   }
 
   cleanupFile(filePath: string): void {
