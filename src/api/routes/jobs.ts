@@ -1,6 +1,14 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { getImportQueue, retryImportJob } from '../../queues/importQueue';
+import { 
+  getImportQueue, 
+  retryImportJob, 
+  killActiveJob,
+  obliterateQueue,
+  drainQueue,
+  pauseQueue,
+  resumeQueue
+} from '../../queues/importQueue';
 import { AppError } from '../middleware/errorHandler';
 
 const router = Router();
@@ -140,6 +148,70 @@ router.delete('/jobs/:id', async (req, res, next) => {
     res.json({
       success: true,
       message: 'Job deleted successfully',
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Kill an active job (forces termination)
+router.delete('/jobs/:id/kill', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    await killActiveJob(id);
+
+    res.json({
+      success: true,
+      message: 'Job killed successfully',
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Queue management endpoints
+router.post('/queue/obliterate', async (req, res, next) => {
+  try {
+    await obliterateQueue();
+    res.json({
+      success: true,
+      message: 'Queue obliterated - all jobs removed',
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/queue/drain', async (req, res, next) => {
+  try {
+    await drainQueue();
+    res.json({
+      success: true,
+      message: 'Queue drained - all waiting jobs removed',
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/queue/pause', async (req, res, next) => {
+  try {
+    await pauseQueue();
+    res.json({
+      success: true,
+      message: 'Queue paused',
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/queue/resume', async (req, res, next) => {
+  try {
+    await resumeQueue();
+    res.json({
+      success: true,
+      message: 'Queue resumed',
     });
   } catch (error) {
     next(error);

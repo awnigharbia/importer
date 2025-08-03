@@ -208,6 +208,47 @@ export async function retryImportJob(jobId: string): Promise<void> {
   logger.info('Import job retry requested', { jobId });
 }
 
+export async function killActiveJob(jobId: string): Promise<void> {
+  const queue = getImportQueue();
+  const job = await queue.getJob(jobId);
+
+  if (!job) {
+    throw new Error(`Job ${jobId} not found`);
+  }
+
+  if (await job.isActive()) {
+    await job.moveToFailed(new Error('Job manually killed'), '0');
+    logger.info('Active job killed', { jobId });
+  } else {
+    await job.remove();
+    logger.info('Non-active job deleted', { jobId });
+  }
+}
+
+export async function obliterateQueue(): Promise<void> {
+  const queue = getImportQueue();
+  await queue.obliterate({ force: true });
+  logger.info('Queue obliterated - all jobs removed');
+}
+
+export async function drainQueue(): Promise<void> {
+  const queue = getImportQueue();
+  await queue.drain();
+  logger.info('Queue drained - all waiting jobs removed');
+}
+
+export async function pauseQueue(): Promise<void> {
+  const queue = getImportQueue();
+  await queue.pause();
+  logger.info('Queue paused');
+}
+
+export async function resumeQueue(): Promise<void> {
+  const queue = getImportQueue();
+  await queue.resume();
+  logger.info('Queue resumed');
+}
+
 export async function closeImportQueue(): Promise<void> {
   if (importWorker) {
     await importWorker.close();
