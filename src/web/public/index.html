@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -14,19 +15,25 @@
             padding: 20px;
             background-color: #f5f5f5;
         }
+
         .container {
             background-color: white;
             padding: 30px;
             border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
         }
-        h1, h2, h3 {
+
+        h1,
+        h2,
+        h3 {
             color: #2c3e50;
         }
+
         h1 {
             border-bottom: 3px solid #3498db;
             padding-bottom: 10px;
         }
+
         .endpoint {
             background-color: #f8f9fa;
             border: 1px solid #dee2e6;
@@ -34,6 +41,7 @@
             padding: 15px;
             margin: 20px 0;
         }
+
         .method {
             display: inline-block;
             padding: 5px 10px;
@@ -42,19 +50,31 @@
             color: white;
             margin-right: 10px;
         }
-        .method.get { background-color: #28a745; }
-        .method.post { background-color: #007bff; }
-        .method.delete { background-color: #dc3545; }
+
+        .method.get {
+            background-color: #28a745;
+        }
+
+        .method.post {
+            background-color: #007bff;
+        }
+
+        .method.delete {
+            background-color: #dc3545;
+        }
+
         .path {
             font-family: 'Courier New', monospace;
             font-size: 16px;
         }
+
         code {
             background-color: #e9ecef;
             padding: 2px 4px;
             border-radius: 3px;
             font-family: 'Courier New', monospace;
         }
+
         pre {
             background-color: #f8f9fa;
             border: 1px solid #dee2e6;
@@ -62,6 +82,7 @@
             padding: 15px;
             overflow-x: auto;
         }
+
         .button {
             display: inline-block;
             padding: 10px 20px;
@@ -71,9 +92,11 @@
             border-radius: 4px;
             margin: 10px 5px;
         }
+
         .button:hover {
             background-color: #2980b9;
         }
+
         .status {
             display: inline-block;
             padding: 3px 8px;
@@ -81,16 +104,29 @@
             font-size: 12px;
             font-weight: bold;
         }
-        .status.active { background-color: #ffc107; color: #000; }
-        .status.completed { background-color: #28a745; color: white; }
-        .status.failed { background-color: #dc3545; color: white; }
+
+        .status.active {
+            background-color: #ffc107;
+            color: #000;
+        }
+
+        .status.completed {
+            background-color: #28a745;
+            color: white;
+        }
+
+        .status.failed {
+            background-color: #dc3545;
+            color: white;
+        }
     </style>
 </head>
+
 <body>
     <div class="container">
         <h1>🎬 Importer Service</h1>
         <p>A microservice for importing videos from various sources and uploading them to Bunny Storage.</p>
-        
+
         <div style="margin: 30px 0;">
             <a href="/dashboard" class="button">📊 View Job Dashboard</a>
             <a href="/health" class="button">🏥 Health Check</a>
@@ -240,4 +276,5 @@ TEMP_DIR=./temp
         </ul>
     </div>
 </body>
+
 </html>

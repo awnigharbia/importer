@@ -170,7 +170,7 @@ router.delete('/jobs/:id/kill', async (req, res, next) => {
 });
 
 // Queue management endpoints
-router.post('/queue/obliterate', async (req, res, next) => {
+router.post('/queue/obliterate', async (_req, res, next) => {
   try {
     await obliterateQueue();
     res.json({
@@ -182,7 +182,7 @@ router.post('/queue/obliterate', async (req, res, next) => {
   }
 });
 
-router.post('/queue/drain', async (req, res, next) => {
+router.post('/queue/drain', async (_req, res, next) => {
   try {
     await drainQueue();
     res.json({
@@ -194,7 +194,7 @@ router.post('/queue/drain', async (req, res, next) => {
   }
 });
 
-router.post('/queue/pause', async (req, res, next) => {
+router.post('/queue/pause', async (_req, res, next) => {
   try {
     await pauseQueue();
     res.json({
@@ -206,7 +206,7 @@ router.post('/queue/pause', async (req, res, next) => {
   }
 });
 
-router.post('/queue/resume', async (req, res, next) => {
+router.post('/queue/resume', async (_req, res, next) => {
   try {
     await resumeQueue();
     res.json({

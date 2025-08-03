@@ -52,6 +52,12 @@ const envSchema = z.object({
   GOOGLE_CLIENT_ID: z.string().optional(),
   GOOGLE_CLIENT_SECRET: z.string().optional(),
   GOOGLE_REFRESH_TOKEN: z.string().optional(),
+
+  // Authentication
+  JWT_SECRET: z.string().default('your-super-secret-jwt-key-change-this-in-production'),
+  AUTH_USERNAME: z.string().default('admin'),
+  AUTH_PASSWORD: z.string().default('admin123'),
+  JWT_EXPIRES_IN: z.string().default('24h'),
 });
 
 export type Env = z.infer<typeof envSchema>;

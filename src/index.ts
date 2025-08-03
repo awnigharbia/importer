@@ -11,6 +11,7 @@ import { initSentry, Sentry } from './config/sentry';
 import { closeRedis } from './config/redis';
 import { logger } from './utils/logger';
 import { errorHandler, notFoundHandler } from './api/middleware/errorHandler';
+import { dashboardAuthMiddleware } from './api/middleware/dashboardAuth';
 import { startImportWorker, closeImportQueue } from './queues/importQueue';
 import { createDashboard } from './web/dashboard';
 import { getJobRecoveryService } from './services/jobRecovery';
@@ -20,6 +21,7 @@ import { getMemoryMonitor } from './utils/memoryMonitor';
 import importRoutes from './api/routes/import';
 import jobsRoutes from './api/routes/jobs';
 import tusRoutes from './api/routes/tus';
+import authRoutes from './api/routes/auth';
 
 // Initialize Sentry
 initSentry();
@@ -63,17 +65,23 @@ app.get('/health', (_req, res) => {
 });
 
 // API Routes
+app.use('/api', authRoutes);
 app.use('/api', importRoutes);
 app.use('/api', jobsRoutes);
 app.use(env.TUS_PATH, tusRoutes);
 
-// Bull Board Dashboard
+// Bull Board Dashboard (protected)
 const dashboardAdapter = createDashboard();
-app.use('/dashboard', dashboardAdapter.getRouter());
+app.use('/dashboard', dashboardAuthMiddleware, dashboardAdapter.getRouter());
 
 // Root route
 app.get('/', (_req, res) => {
   res.sendFile(path.join(__dirname, 'web/public/index.html'));
+});
+
+// Login page
+app.get('/login', (_req, res) => {
+  res.sendFile(path.join(__dirname, 'web/public/login.html'));
 });
 
 // Sentry error handler
