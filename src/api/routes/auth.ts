@@ -60,6 +60,14 @@ router.post('/auth/login', async (req, res) => {
 
     logger.info('Successful login', { username });
 
+    // Set cookie for better security
+    res.cookie('authToken', token, {
+      httpOnly: true,
+      secure: env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    });
+
     return res.json({
       success: true,
       token,

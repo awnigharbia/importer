@@ -169,9 +169,10 @@
         // Check if already logged in
         const token = localStorage.getItem('authToken');
         if (token) {
-            // Redirect to dashboard if already logged in
+            // Redirect to dashboard if already logged in with token as query param
             const returnUrl = new URLSearchParams(window.location.search).get('returnUrl') || '/dashboard';
-            window.location.href = returnUrl;
+            const separator = returnUrl.includes('?') ? '&' : '?';
+            window.location.href = returnUrl + separator + 'token=' + encodeURIComponent(token);
         }
 
         form.addEventListener('submit', async (e) => {
@@ -208,10 +209,12 @@
                     successMessage.textContent = 'Login successful! Redirecting...';
                     successMessage.style.display = 'block';
                     
-                    // Redirect to dashboard or return URL
+                    // Redirect to dashboard or return URL with token
                     const returnUrl = new URLSearchParams(window.location.search).get('returnUrl') || '/dashboard';
                     setTimeout(() => {
-                        window.location.href = returnUrl;
+                        // Append token as query parameter
+                        const separator = returnUrl.includes('?') ? '&' : '?';
+                        window.location.href = returnUrl + separator + 'token=' + encodeURIComponent(data.token);
                     }, 1000);
                 } else {
                     // Show error message
