@@ -247,7 +247,7 @@ export class JobRecoveryService {
     this.heartbeatInterval = setInterval(async () => {
       try {
         // Update timestamp for all active jobs
-        for (const [_jobId, jobState] of this.activeJobs.entries()) {
+        for (const [, jobState] of this.activeJobs.entries()) {
           jobState.timestamp = Date.now();
           await this.persistJobState(jobState);
         }
@@ -265,7 +265,7 @@ export class JobRecoveryService {
     }
 
     // Mark all active jobs as stalled for recovery on next startup
-    for (const [_jobId, jobState] of this.activeJobs.entries()) {
+    for (const [, jobState] of this.activeJobs.entries()) {
       jobState.status = 'stalled';
       jobState.timestamp = Date.now();
       await this.persistJobState(jobState);

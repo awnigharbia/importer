@@ -50,8 +50,8 @@ export async function processImportJob(
         url,
         type,
         fileName: fileName || undefined,
-        onProgress: async (progress) => {
-          await job.updateProgress({
+        onProgress: (progress) => {
+          void job.updateProgress({
             stage: 'downloading',
             percentage: progress.percentage,
             message: `Downloading: ${progress.percentage}%`,
@@ -89,16 +89,16 @@ export async function processImportJob(
     const uploadResult = await bunnyStorage.upload({
       filePath: tempFilePath!,
       fileName: uniqueFileName,
-      onProgress: async (progress) => {
+      onProgress: (progress) => {
         const progressData = {
           stage: 'uploading',
           percentage: progress.percentage,
           message: `Uploading: ${progress.percentage}%`,
         };
-        await job.updateProgress(progressData as ImportJobProgress);
+        void job.updateProgress(progressData as ImportJobProgress);
         
         // Update recovery state with upload progress
-        await recoveryService.updateJobProgress(job.id!, progressData, tempFiles);
+        void recoveryService.updateJobProgress(job.id!, progressData, tempFiles);
       },
     });
 

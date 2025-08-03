@@ -81,15 +81,16 @@ router.post('/auth/login', async (req, res) => {
   }
 });
 
-router.post('/auth/verify', (req, res): any => {
+router.post('/auth/verify', (req, res) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
 
   if (!token) {
-    return res.status(401).json({
+    res.status(401).json({
       success: false,
       message: 'No token provided',
     });
+    return;
   }
 
   jwt.verify(token, env.JWT_SECRET, (err, decoded) => {

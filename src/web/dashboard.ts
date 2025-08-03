@@ -20,9 +20,9 @@ export function createDashboard() {
       
       // Add the queue to the existing dashboard
       bullBoard.addQueue(new BullMQAdapter(importQueue) as any);
-      console.log('Import queue added to Bull Board dashboard');
+      // Import queue added to Bull Board dashboard
     } catch (error) {
-      console.warn('Failed to add import queue to dashboard:', error);
+      // Failed to add import queue to dashboard
     }
   }, 2000); // Wait 2 seconds for Redis to potentially connect
   

@@ -72,7 +72,7 @@ app.use(env.TUS_PATH, tusRoutes);
 
 // Bull Board Dashboard (protected)
 const dashboardAdapter = createDashboard();
-app.use('/dashboard', dashboardAuthMiddleware, dashboardAdapter.getRouter());
+app.use('/dashboard', dashboardAuthMiddleware, dashboardAdapter.getRouter() as express.RequestHandler);
 
 // Root route
 app.get('/', (_req, res) => {

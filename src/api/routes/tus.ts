@@ -7,7 +7,7 @@ const tusServer = createTusServer();
 
 // Handle all TUS routes
 router.all('*', (req, res) => {
-  tusServer.handle(req, res);
+  void tusServer.handle(req, res);
 });
 
 export default router;
