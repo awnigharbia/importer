@@ -1,9 +1,10 @@
 import { Router } from 'express';
-import * as bcrypt from 'bcryptjs';
-import * as jwt from 'jsonwebtoken';
 import { z } from 'zod';
 import { env } from '../../config/env';
 import { logger } from '../../utils/logger';
+
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 
 const router = Router();
 
@@ -93,7 +94,7 @@ router.post('/auth/verify', (req, res) => {
     return;
   }
 
-  jwt.verify(token, env.JWT_SECRET, (err: jwt.VerifyErrors | null, decoded: any) => {
+  jwt.verify(token, env.JWT_SECRET, (err: any, decoded: any) => {
     if (err) {
       return res.status(403).json({
         success: false,
