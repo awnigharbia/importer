@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import jwt from 'jsonwebtoken';
+import * as jwt from 'jsonwebtoken';
 import { env } from '../../config/env';
 
 export function dashboardAuthMiddleware(req: Request, res: Response, next: NextFunction): void {
@@ -18,7 +18,7 @@ export function dashboardAuthMiddleware(req: Request, res: Response, next: NextF
     return;
   }
 
-  jwt.verify(finalToken, env.JWT_SECRET, (err) => {
+  jwt.verify(finalToken, env.JWT_SECRET, (err: jwt.VerifyErrors | null) => {
     if (err) {
       // Invalid token, redirect to login
       const returnUrl = encodeURIComponent(req.originalUrl);

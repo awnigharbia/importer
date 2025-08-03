@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import jwt from 'jsonwebtoken';
+import * as jwt from 'jsonwebtoken';
 import { env } from '../../config/env';
 import { logger } from '../../utils/logger';
 
@@ -24,7 +24,7 @@ export function authenticateToken(req: Request, res: Response, next: NextFunctio
     return;
   }
 
-  jwt.verify(token, env.JWT_SECRET, (err, decoded) => {
+  jwt.verify(token, env.JWT_SECRET, (err: jwt.VerifyErrors | null, decoded: any) => {
     if (err) {
       logger.warn('Invalid token attempt', { error: err.message });
       res.status(403).json({ success: false, message: 'Invalid or expired token' });
@@ -45,7 +45,7 @@ export function optionalAuth(req: Request, _res: Response, next: NextFunction): 
     return;
   }
 
-  jwt.verify(token, env.JWT_SECRET, (err, decoded) => {
+  jwt.verify(token, env.JWT_SECRET, (err: jwt.VerifyErrors | null, decoded: any) => {
     if (!err) {
       req.user = decoded as JwtPayload;
     }
