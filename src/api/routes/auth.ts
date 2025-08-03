@@ -118,7 +118,7 @@ router.post('/auth/logout', (_req, res) => {
 // Utility endpoint to generate a bcrypt hash (for development)
 if (env.NODE_ENV === 'development') {
   router.post('/auth/hash', async (req, res) => {
-    const { password } = req.body;
+    const { password } = req.body as { password?: string };
     if (!password) {
       return res.status(400).json({
         success: false,
