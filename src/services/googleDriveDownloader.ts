@@ -197,7 +197,7 @@ export class GoogleDriveDownloader {
         reject(error);
       });
 
-      writeStream.on('error', (error) => {
+      writeStream.on('error', (error: unknown) => {
         reject(error);
       });
 

@@ -16,11 +16,7 @@ export async function processImportJob(
 ): Promise<ImportJobResult> {
   const { url, type, fileName } = job.data;
   const downloader = new Downloader();
-  const googleDriveDownloader = new GoogleDriveDownloader({
-    clientId: env.GOOGLE_CLIENT_ID!,
-    clientSecret: env.GOOGLE_CLIENT_SECRET!,
-    refreshToken: env.GOOGLE_REFRESH_TOKEN!
-  });
+  const googleDriveDownloader = new GoogleDriveDownloader();
   const bunnyStorage = new BunnyStorage();
   const recoveryService = getJobRecoveryService();
   const memoryMonitor = getMemoryMonitor();
