@@ -7,7 +7,7 @@ import { Sentry } from '../config/sentry';
 
 export interface ImportJobData {
   url: string;
-  type: 'gdrive' | 'direct';
+  type: 'gdrive' | 'direct' | 'youtube';
   fileName?: string | undefined;
   requestId: string;
 }

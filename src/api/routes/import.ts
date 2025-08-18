@@ -3,12 +3,13 @@ import { z } from 'zod';
 import { nanoid } from 'nanoid';
 import { addImportJob } from '../../queues/importQueue';
 import { isGoogleDriveUrl } from '../../utils/googleDrive';
+import { YouTubeDownloader } from '../../services/youtubeDownloader';
 
 const router = Router();
 
 const importSchema = z.object({
   url: z.string().url('Invalid URL format'),
-  type: z.enum(['gdrive', 'direct']).optional(),
+  type: z.enum(['gdrive', 'direct', 'youtube']).optional(),
   fileName: z.string().optional(),
 });
 
@@ -25,7 +26,13 @@ router.post('/import', async (req, res, next) => {
 
     // Auto-detect type if not provided
     if (!type) {
-      type = isGoogleDriveUrl(url) ? 'gdrive' : 'direct';
+      if (isGoogleDriveUrl(url)) {
+        type = 'gdrive';
+      } else if (YouTubeDownloader.isYouTubeUrl(url)) {
+        type = 'youtube';
+      } else {
+        type = 'direct';
+      }
     }
 
     const requestId = nanoid();

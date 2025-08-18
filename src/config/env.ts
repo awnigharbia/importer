@@ -53,6 +53,7 @@ const envSchema = z.object({
   GOOGLE_CLIENT_SECRET: z.string().optional(),
   GOOGLE_REFRESH_TOKEN: z.string().optional(),
 
+
   // Authentication
   JWT_SECRET: z.string().default('your-super-secret-jwt-key-change-this-in-production'),
   AUTH_USERNAME: z.string().default('admin'),

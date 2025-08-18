@@ -4,6 +4,7 @@ import { nanoid } from 'nanoid';
 import { ImportJobData, ImportJobResult, ImportJobProgress } from '../queues/importQueue';
 import { Downloader } from '../services/downloader';
 import { GoogleDriveDownloader } from '../services/googleDriveDownloader';
+import { YouTubeDownloader } from '../services/youtubeDownloader';
 import { BunnyStorage } from '../services/bunnyStorage';
 import { sendTelegramNotification } from '../services/telegram';
 import { logger } from '../utils/logger';
@@ -17,6 +18,7 @@ export async function processImportJob(
   const { url, type, fileName } = job.data;
   const downloader = new Downloader();
   const googleDriveDownloader = new GoogleDriveDownloader();
+  const youtubeDownloader = new YouTubeDownloader();
   const bunnyStorage = new BunnyStorage();
   const recoveryService = getJobRecoveryService();
   const memoryMonitor = getMemoryMonitor();
@@ -43,6 +45,24 @@ export async function processImportJob(
       downloadResult = await googleDriveDownloader.downloadFile(url, {
         ...(fileName && { fileName }),
         outputPath: env.TEMP_DIR || '/tmp'
+      });
+    } else if (type === 'youtube') {
+      // Use YouTube downloader for YouTube URLs
+      const videoId = YouTubeDownloader.extractVideoId(url);
+      if (!videoId) {
+        throw new Error('Invalid YouTube URL: cannot extract video ID');
+      }
+
+      downloadResult = await youtubeDownloader.download({
+        videoId,
+        outputPath: env.TEMP_DIR || '/tmp',
+        onProgress: (progress) => {
+          void job.updateProgress({
+            stage: 'downloading',
+            percentage: progress.percentage,
+            message: progress.message,
+          } as ImportJobProgress);
+        },
       });
     } else {
       // Use regular downloader for direct URLs
@@ -118,7 +138,7 @@ export async function processImportJob(
     }, 5000); // Wait 5 seconds for CDN propagation
 
     // Clean up temporary file
-    if (type === 'gdrive') {
+    if (type === 'gdrive' || type === 'youtube') {
       // Clean up temporary file
       if (require('fs').existsSync(tempFilePath!)) {
         require('fs').unlinkSync(tempFilePath!);
@@ -155,7 +175,7 @@ export async function processImportJob(
   } catch (error) {
     // Clean up on failure
     if (tempFilePath) {
-      if (type === 'gdrive') {
+      if (type === 'gdrive' || type === 'youtube') {
         // Clean up temporary file
         if (require('fs').existsSync(tempFilePath!)) {
           require('fs').unlinkSync(tempFilePath!);
