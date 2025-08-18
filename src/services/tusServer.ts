@@ -51,7 +51,7 @@ export function createTusServer(): Server {
         // Create a job to upload to Bunny Storage
         const jobData = {
           url: filePath,
-          type: 'direct' as const,
+          type: 'local' as const,
           fileName: upload.id,
           requestId: `tus-${upload.id}`,
         };

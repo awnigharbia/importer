@@ -64,6 +64,27 @@ export async function processImportJob(
           } as ImportJobProgress);
         },
       });
+    } else if (type === 'local') {
+      // File is already stored locally, no download needed
+      await job.updateProgress({
+        stage: 'downloading',
+        percentage: 100,
+        message: 'Local file ready for upload',
+      } as ImportJobProgress);
+
+      // Verify file exists
+      if (!require('fs').existsSync(url)) {
+        throw new Error(`Local file not found: ${url}`);
+      }
+
+      const stats = require('fs').statSync(url);
+      const actualFileName = fileName || require('path').basename(url);
+
+      downloadResult = {
+        filePath: url,
+        fileName: actualFileName,
+        fileSize: stats.size,
+      };
     } else {
       // Use regular downloader for direct URLs
       downloadResult = await downloader.download({
@@ -143,6 +164,11 @@ export async function processImportJob(
       if (require('fs').existsSync(tempFilePath!)) {
         require('fs').unlinkSync(tempFilePath!);
       }
+    } else if (type === 'local') {
+      // For local files (TUS uploads), clean up the temporary upload file
+      if (require('fs').existsSync(tempFilePath!)) {
+        require('fs').unlinkSync(tempFilePath!);
+      }
     } else {
       downloader.cleanupFile(tempFilePath!);
     }
@@ -177,6 +203,11 @@ export async function processImportJob(
     if (tempFilePath) {
       if (type === 'gdrive' || type === 'youtube') {
         // Clean up temporary file
+        if (require('fs').existsSync(tempFilePath!)) {
+          require('fs').unlinkSync(tempFilePath!);
+        }
+      } else if (type === 'local') {
+        // For local files (TUS uploads), clean up the temporary upload file
         if (require('fs').existsSync(tempFilePath!)) {
           require('fs').unlinkSync(tempFilePath!);
         }

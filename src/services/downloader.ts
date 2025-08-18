@@ -44,6 +44,11 @@ export class Downloader {
   async download(options: DownloadOptions): Promise<DownloadResult> {
     const { url, type, fileName, onProgress } = options;
 
+    // Validate initial URL
+    if (!url || typeof url !== 'string' || url.trim() === '') {
+      throw new Error('Invalid URL: URL is required and cannot be empty');
+    }
+
     let downloadUrl = url;
     let suggestedFileName = fileName;
 
@@ -54,6 +59,11 @@ export class Downloader {
       }
       downloadUrl = driveInfo.directUrl;
       suggestedFileName = suggestedFileName || driveInfo.fileName;
+      
+      // Validate the generated download URL
+      if (!downloadUrl || typeof downloadUrl !== 'string' || downloadUrl.trim() === '') {
+        throw new Error('Failed to generate valid download URL from Google Drive URL');
+      }
     }
 
     const tempFileName = `${nanoid()}_${suggestedFileName || 'download'}`;
@@ -89,6 +99,17 @@ export class Downloader {
     filePath: string,
     onProgress?: (progress: DownloadProgress) => void
   ): Promise<DownloadResult> {
+    // Validate URL before making request
+    if (!url || typeof url !== 'string' || url.trim() === '') {
+      throw new Error('Invalid URL: URL is empty or undefined');
+    }
+
+    try {
+      new URL(url);
+    } catch (error) {
+      throw new Error(`Invalid URL format: ${url}`);
+    }
+
     // Use very small buffer size to minimize RAM usage for large files
     const bufferSize = Math.min(env.STREAM_BUFFER_SIZE * 1024, 8192); // Max 8KB buffer
     
