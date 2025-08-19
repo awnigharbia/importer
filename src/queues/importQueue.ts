@@ -10,6 +10,7 @@ export interface ImportJobData {
   type: 'gdrive' | 'direct' | 'youtube' | 'local';
   fileName?: string | undefined;
   requestId: string;
+  videoId?: string; // For TUS uploads, the pre-created video ID
 }
 
 export interface ImportJobResult {
