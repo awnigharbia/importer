@@ -32,7 +32,7 @@ export async function processImportJob(
   try {
     // Log initial memory usage
     memoryMonitor.logCurrentMemoryUsage();
-    
+
     // Track job for recovery
     await recoveryService.trackJob(job, tempFiles);
     // Download stage
@@ -105,11 +105,11 @@ export async function processImportJob(
 
     tempFilePath = downloadResult.filePath;
     tempFiles = [tempFilePath]; // Track temp files for cleanup
-    
+
     // Log memory usage after download
     logger.info('Download completed, checking memory usage');
     memoryMonitor.logCurrentMemoryUsage();
-    
+
     // Update recovery state with download progress
     await recoveryService.updateJobProgress(job.id!, {
       stage: 'downloading',
@@ -139,7 +139,7 @@ export async function processImportJob(
           message: `Uploading: ${progress.percentage}%`,
         };
         void job.updateProgress(progressData as ImportJobProgress);
-        
+
         // Update recovery state with upload progress
         void recoveryService.updateJobProgress(job.id!, progressData, tempFiles);
       },
@@ -231,7 +231,7 @@ export async function processImportJob(
     // Log final memory usage
     logger.info('Job completed, final memory check');
     memoryMonitor.logCurrentMemoryUsage();
-    
+
     // Mark job as completed in recovery service
     await recoveryService.completeJob(job.id!);
 
