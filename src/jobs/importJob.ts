@@ -91,7 +91,7 @@ export async function processImportJob(
       // Use regular downloader for direct URLs
       downloadResult = await downloader.download({
         url,
-        type,
+        type: 'direct', // Force to 'direct' since this else branch only handles direct URLs
         fileName: fileName || undefined,
         onProgress: (progress) => {
           void job.updateProgress({
