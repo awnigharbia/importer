@@ -59,6 +59,10 @@ const envSchema = z.object({
   AUTH_USERNAME: z.string().default('admin'),
   AUTH_PASSWORD: z.string().default('admin123'),
   JWT_EXPIRES_IN: z.string().default('24h'),
+
+  // Encode Admin API
+  ENCODE_ADMIN_API_URL: z.string().default('https://encode-admin.fly.dev/api'),
+  ENCODE_ADMIN_API_KEY: z.string().default('e9aaae3945ba3937b04feeb14de0c407'),
 });
 
 export type Env = z.infer<typeof envSchema>;

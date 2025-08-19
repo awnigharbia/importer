@@ -6,6 +6,7 @@ import { Downloader } from '../services/downloader';
 import { GoogleDriveDownloader } from '../services/googleDriveDownloader';
 import { YouTubeDownloader } from '../services/youtubeDownloader';
 import { BunnyStorage } from '../services/bunnyStorage';
+import { EncodeAdminService } from '../services/encodeAdmin';
 import { sendTelegramNotification } from '../services/telegram';
 import { logger } from '../utils/logger';
 import { env } from '../config/env';
@@ -15,11 +16,12 @@ import { getMemoryMonitor } from '../utils/memoryMonitor';
 export async function processImportJob(
   job: Job<ImportJobData, ImportJobResult>
 ): Promise<ImportJobResult> {
-  const { url, type, fileName } = job.data;
+  const { url, type, fileName, videoId } = job.data;
   const downloader = new Downloader();
   const googleDriveDownloader = new GoogleDriveDownloader();
   const youtubeDownloader = new YouTubeDownloader();
   const bunnyStorage = new BunnyStorage();
+  const encodeAdminService = new EncodeAdminService();
   const recoveryService = getJobRecoveryService();
   const memoryMonitor = getMemoryMonitor();
 
@@ -157,6 +159,42 @@ export async function processImportJob(
         logger.warn('CDN verification error', { error });
       }
     }, 5000); // Wait 5 seconds for CDN propagation
+
+    // Integrate with encode-admin API
+    if (videoId) {
+      // For TUS uploads, update existing video with source link
+      try {
+        await encodeAdminService.updateVideoSourceLink(videoId, uploadResult.cdnUrl);
+        logger.info('Updated video source link in encode-admin', {
+          videoId,
+          cdnUrl: uploadResult.cdnUrl,
+        });
+      } catch (error) {
+        logger.error('Failed to update video in encode-admin', {
+          videoId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        // Don't fail the job if encode-admin update fails
+      }
+    } else {
+      // For regular imports, create a new video
+      try {
+        const videoName = fileName || path.basename(url);
+        const video = await encodeAdminService.createVideo({
+          name: videoName,
+          sourceLink: uploadResult.cdnUrl,
+        });
+        logger.info('Created video in encode-admin', {
+          videoId: video.id,
+          cdnUrl: uploadResult.cdnUrl,
+        });
+      } catch (error) {
+        logger.error('Failed to create video in encode-admin', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        // Don't fail the job if encode-admin creation fails
+      }
+    }
 
     // Clean up temporary file
     if (type === 'gdrive' || type === 'youtube') {

@@ -38,7 +38,7 @@ export function createTusServer(): Server {
       });
       return { res: _res };
     },
-    onUploadFinish: async (_req, _res, upload) => {
+    onUploadFinish: async (req, _res, upload) => {
       logger.info('TUS upload finished', {
         uploadId: upload.id,
         size: upload.size,
@@ -48,12 +48,16 @@ export function createTusServer(): Server {
         // Get the file path from the upload
         const filePath = path.join(uploadDir, upload.id);
         
+        // Extract videoId from headers (for pre-created videos)
+        const videoId = req.headers['x-video-id'] as string;
+        
         // Create a job to upload to Bunny Storage
         const jobData = {
           url: filePath,
           type: 'local' as const,
           fileName: upload.id,
           requestId: `tus-${upload.id}`,
+          ...(videoId && { videoId }),
         };
 
         await addImportJob(jobData);
@@ -61,6 +65,7 @@ export function createTusServer(): Server {
         logger.info('TUS upload job created', {
           uploadId: upload.id,
           jobId: jobData.requestId,
+          videoId,
         });
       } catch (error) {
         logger.error('Failed to create job for TUS upload', {
