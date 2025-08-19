@@ -192,12 +192,12 @@ export class GoogleDriveDownloader {
     return new Promise((resolve, reject) => {
       const writeStream = fs.createWriteStream(filePath);
 
-      stream.on('error', (error: any) => {
+      stream.on('error', (error) => {
         writeStream.destroy();
         reject(error);
       });
 
-      writeStream.on('error', (error: any) => {
+      writeStream.on('error', (error: unknown) => {
         reject(error);
       });
 
@@ -217,7 +217,7 @@ export class GoogleDriveDownloader {
         chunks.push(chunk);
       });
 
-      stream.on('error', (error: any) => {
+      stream.on('error', (error) => {
         reject(error);
       });
 

@@ -4,7 +4,6 @@ import { nanoid } from 'nanoid';
 import { ImportJobData, ImportJobResult, ImportJobProgress } from '../queues/importQueue';
 import { Downloader } from '../services/downloader';
 import { GoogleDriveDownloader } from '../services/googleDriveDownloader';
-import { YouTubeDownloader } from '../services/youtubeDownloader';
 import { BunnyStorage } from '../services/bunnyStorage';
 import { sendTelegramNotification } from '../services/telegram';
 import { logger } from '../utils/logger';
@@ -18,7 +17,6 @@ export async function processImportJob(
   const { url, type, fileName } = job.data;
   const downloader = new Downloader();
   const googleDriveDownloader = new GoogleDriveDownloader();
-  const youtubeDownloader = new YouTubeDownloader();
   const bunnyStorage = new BunnyStorage();
   const recoveryService = getJobRecoveryService();
   const memoryMonitor = getMemoryMonitor();
@@ -46,53 +44,14 @@ export async function processImportJob(
         ...(fileName && { fileName }),
         outputPath: env.TEMP_DIR || '/tmp'
       });
-    } else if (type === 'youtube') {
-      // Use YouTube downloader for YouTube URLs
-      const videoId = YouTubeDownloader.extractVideoId(url);
-      if (!videoId) {
-        throw new Error('Invalid YouTube URL: cannot extract video ID');
-      }
-
-      downloadResult = await youtubeDownloader.download({
-        videoId,
-        outputPath: env.TEMP_DIR || '/tmp',
-        onProgress: (progress) => {
-          void job.updateProgress({
-            stage: 'downloading',
-            percentage: progress.percentage,
-            message: progress.message,
-          } as ImportJobProgress);
-        },
-      });
-    } else if (type === 'local') {
-      // File is already stored locally, no download needed
-      await job.updateProgress({
-        stage: 'downloading',
-        percentage: 100,
-        message: 'Local file ready for upload',
-      } as ImportJobProgress);
-
-      // Verify file exists
-      if (!require('fs').existsSync(url)) {
-        throw new Error(`Local file not found: ${url}`);
-      }
-
-      const stats = require('fs').statSync(url);
-      const actualFileName = fileName || require('path').basename(url);
-
-      downloadResult = {
-        filePath: url,
-        fileName: actualFileName,
-        fileSize: stats.size,
-      };
     } else {
       // Use regular downloader for direct URLs
       downloadResult = await downloader.download({
         url,
         type,
         fileName: fileName || undefined,
-        onProgress: (progress) => {
-          void job.updateProgress({
+        onProgress: async (progress) => {
+          await job.updateProgress({
             stage: 'downloading',
             percentage: progress.percentage,
             message: `Downloading: ${progress.percentage}%`,
@@ -130,16 +89,16 @@ export async function processImportJob(
     const uploadResult = await bunnyStorage.upload({
       filePath: tempFilePath!,
       fileName: uniqueFileName,
-      onProgress: (progress) => {
+      onProgress: async (progress) => {
         const progressData = {
           stage: 'uploading',
           percentage: progress.percentage,
           message: `Uploading: ${progress.percentage}%`,
         };
-        void job.updateProgress(progressData as ImportJobProgress);
+        await job.updateProgress(progressData as ImportJobProgress);
         
         // Update recovery state with upload progress
-        void recoveryService.updateJobProgress(job.id!, progressData, tempFiles);
+        await recoveryService.updateJobProgress(job.id!, progressData, tempFiles);
       },
     });
 
@@ -159,13 +118,8 @@ export async function processImportJob(
     }, 5000); // Wait 5 seconds for CDN propagation
 
     // Clean up temporary file
-    if (type === 'gdrive' || type === 'youtube') {
+    if (type === 'gdrive') {
       // Clean up temporary file
-      if (require('fs').existsSync(tempFilePath!)) {
-        require('fs').unlinkSync(tempFilePath!);
-      }
-    } else if (type === 'local') {
-      // For local files (TUS uploads), clean up the temporary upload file
       if (require('fs').existsSync(tempFilePath!)) {
         require('fs').unlinkSync(tempFilePath!);
       }
@@ -201,13 +155,8 @@ export async function processImportJob(
   } catch (error) {
     // Clean up on failure
     if (tempFilePath) {
-      if (type === 'gdrive' || type === 'youtube') {
+      if (type === 'gdrive') {
         // Clean up temporary file
-        if (require('fs').existsSync(tempFilePath!)) {
-          require('fs').unlinkSync(tempFilePath!);
-        }
-      } else if (type === 'local') {
-        // For local files (TUS uploads), clean up the temporary upload file
         if (require('fs').existsSync(tempFilePath!)) {
           require('fs').unlinkSync(tempFilePath!);
         }
