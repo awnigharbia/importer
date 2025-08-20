@@ -38,7 +38,7 @@ export function createTusServer(): Server {
       });
       return { res: _res };
     },
-    onUploadFinish: async (req, _res, upload) => {
+    onUploadFinish: async (_req, _res, upload) => {
       logger.info('TUS upload finished', {
         uploadId: upload.id,
         size: upload.size,
