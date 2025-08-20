@@ -47,8 +47,8 @@ export function createTusServer(): Server {
       try {
         // Get the file path from the upload
         const filePath = path.join(uploadDir, upload.id);
-        
-        // Extract videoId from upload-metadata (for pre-created videos)
+
+        logger.info(req.headers);
         const uploadMetadata = req.headers['upload-metadata'];
         let videoId: string | undefined;
 
@@ -63,7 +63,7 @@ export function createTusServer(): Server {
             });
           }
         }
-        
+
         // Create a job to upload to Bunny Storage
         const jobData = {
           url: filePath,
@@ -96,7 +96,7 @@ export function createTusServer(): Server {
   });
 
   server.on(EVENTS.POST_RECEIVE, (_req, _res, upload) => {
-    logger.debug('TUS POST_RECEIVE event', { 
+    logger.debug('TUS POST_RECEIVE event', {
       uploadId: upload.id,
       offset: upload.offset,
     });
@@ -115,7 +115,7 @@ export function createTusServer(): Server {
 
 function parseMetadata(metadata: string): Record<string, string> {
   const result: Record<string, string> = {};
-  
+
   metadata.split(',').forEach((item) => {
     const [key, value] = item.trim().split(' ');
     if (key && value) {
