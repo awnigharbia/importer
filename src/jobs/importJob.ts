@@ -50,13 +50,13 @@ export async function processImportJob(
       });
     } else if (type === 'youtube') {
       // Use YouTube downloader for YouTube URLs
-      const videoId = YouTubeDownloader.extractVideoId(url);
-      if (!videoId) {
+      const youtubeVideoId = YouTubeDownloader.extractVideoId(url);
+      if (!youtubeVideoId) {
         throw new Error('Invalid YouTube URL: cannot extract video ID');
       }
 
       downloadResult = await youtubeDownloader.download({
-        videoId,
+        videoId: youtubeVideoId,
         outputPath: env.TEMP_DIR || '/tmp',
         onProgress: (progress) => {
           void job.updateProgress({
@@ -162,12 +162,13 @@ export async function processImportJob(
 
     // Integrate with encode-admin API
     if (videoId) {
-      // For TUS uploads, update existing video with source link
+      // Update existing video with source link (for TUS uploads, YouTube, or Google Drive imports with video ID)
       try {
         await encodeAdminService.updateVideoSourceLink(videoId, uploadResult.cdnUrl);
         logger.info('Updated video source link in encode-admin', {
           videoId,
           cdnUrl: uploadResult.cdnUrl,
+          importType: type,
         });
       } catch (error) {
         logger.error('Failed to update video in encode-admin', {

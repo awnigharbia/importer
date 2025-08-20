@@ -4,6 +4,7 @@ import { nanoid } from 'nanoid';
 import { addImportJob } from '../../queues/importQueue';
 import { isGoogleDriveUrl } from '../../utils/googleDrive';
 import { YouTubeDownloader } from '../../services/youtubeDownloader';
+import { logger } from '../../utils/logger';
 
 const router = Router();
 
@@ -11,6 +12,7 @@ const importSchema = z.object({
   url: z.string().url('Invalid URL format'),
   type: z.enum(['gdrive', 'direct', 'youtube']).optional(),
   fileName: z.string().optional(),
+  videoId: z.string().optional(),
 });
 
 router.post('/import', async (req, res, next) => {
@@ -21,8 +23,14 @@ router.post('/import', async (req, res, next) => {
       throw validation.error;
     }
 
-    const { url, fileName } = validation.data;
+    const { url, fileName, videoId: bodyVideoId } = validation.data;
     let { type } = validation.data;
+
+    // Check for video-id in headers (similar to TUS upload)
+    let videoId = bodyVideoId;
+    if (!videoId && req.headers['video-id']) {
+      videoId = req.headers['video-id'] as string;
+    }
 
     // Auto-detect type if not provided
     if (!type) {
@@ -37,11 +45,22 @@ router.post('/import', async (req, res, next) => {
 
     const requestId = nanoid();
     
+    // Log if video ID is provided
+    if (videoId) {
+      logger.info('Import request with video ID', {
+        requestId,
+        videoId,
+        type,
+        url,
+      });
+    }
+    
     const job = await addImportJob({
       url,
       type,
       fileName: fileName || undefined,
       requestId,
+      ...(videoId && { videoId }),
     });
 
     res.status(201).json({
@@ -52,6 +71,7 @@ router.post('/import', async (req, res, next) => {
         status: await job.getState(),
         url,
         type,
+        ...(videoId && { videoId }),
       },
     });
   } catch (error) {
