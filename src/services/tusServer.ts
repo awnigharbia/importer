@@ -76,7 +76,7 @@ export function createTusServer(): Server {
           url: filePath,
           type: 'local' as const,
           fileName: upload.id,
-          requestId: `tus-${upload.id}`,
+          requestId: `tus-${upload.id}-${Date.now()}`,
           ...(videoId && { videoId }),
         };
 
