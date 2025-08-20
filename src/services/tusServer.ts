@@ -48,20 +48,26 @@ export function createTusServer(): Server {
         // Get the file path from the upload
         const filePath = path.join(uploadDir, upload.id);
 
-        logger.info(req.headers);
-        const uploadMetadata = req.headers['upload-metadata'];
-        let videoId: string | undefined;
+        // Log upload object to debug what's available
+        logger.info('Upload object in onUploadFinish', {
+          uploadId: upload.id,
+          metadata: upload.metadata,
+          size: upload.size,
+        });
 
-        if (uploadMetadata) {
-          const metadataObj = parseMetadata(uploadMetadata as string);
-          if (metadataObj['video-id']) {
-            videoId = Buffer.from(metadataObj['video-id'], 'base64').toString('utf8');
-            logger.info('Extracted video ID from upload metadata', {
-              uploadId: upload.id,
-              videoId,
-              encodedVideoId: metadataObj['video-id'],
-            });
-          }
+        let videoId: string | undefined;
+        if (upload.metadata && upload.metadata['video-id']) {
+          videoId = Buffer.from(upload.metadata['video-id'], 'base64').toString('utf8');
+          logger.info('Extracted video ID from upload metadata', {
+            uploadId: upload.id,
+            videoId,
+            encodedVideoId: upload.metadata['video-id'],
+          });
+        } else {
+          logger.warn('No video-id found in upload metadata', {
+            uploadId: upload.id,
+            availableMetadata: Object.keys(upload.metadata || {}),
+          });
         }
 
         // Create a job to upload to Bunny Storage
