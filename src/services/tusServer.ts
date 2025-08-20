@@ -57,11 +57,12 @@ export function createTusServer(): Server {
 
         let videoId: string | undefined;
         if (upload.metadata && upload.metadata['video-id']) {
-          videoId = Buffer.from(upload.metadata['video-id'], 'base64').toString('utf8');
+          // The video ID is already decoded in the metadata object, no need to decode from base64
+          videoId = upload.metadata['video-id'];
           logger.info('Extracted video ID from upload metadata', {
             uploadId: upload.id,
             videoId,
-            encodedVideoId: upload.metadata['video-id'],
+            rawVideoId: upload.metadata['video-id'],
           });
         } else {
           logger.warn('No video-id found in upload metadata', {
