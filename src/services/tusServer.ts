@@ -48,8 +48,21 @@ export function createTusServer(): Server {
         // Get the file path from the upload
         const filePath = path.join(uploadDir, upload.id);
         
-        // Extract videoId from headers (for pre-created videos)
-        const videoId = req.headers['x-video-id'] as string;
+        // Extract videoId from upload-metadata (for pre-created videos)
+        const uploadMetadata = req.headers['upload-metadata'];
+        let videoId: string | undefined;
+
+        if (uploadMetadata) {
+          const metadataObj = parseMetadata(uploadMetadata as string);
+          if (metadataObj['video-id']) {
+            videoId = Buffer.from(metadataObj['video-id'], 'base64').toString('utf8');
+            logger.info('Extracted video ID from upload metadata', {
+              uploadId: upload.id,
+              videoId,
+              encodedVideoId: metadataObj['video-id'],
+            });
+          }
+        }
         
         // Create a job to upload to Bunny Storage
         const jobData = {
