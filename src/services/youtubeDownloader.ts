@@ -2,10 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { nanoid } from 'nanoid';
 import { logger } from '../utils/logger';
-import { exec } from 'child_process';
-import { promisify } from 'util';
-
-const execAsync = promisify(exec);
+import { spawn } from 'child_process';
 
 export interface YouTubeDownloadOptions {
   videoId: string;
@@ -73,7 +70,7 @@ export class YouTubeDownloader {
 
     // Try each proxy until one works
     for (let i = 0; i < proxies.length; i++) {
-      const proxy = proxies[i];
+      const proxy = proxies[i]!;
       
       try {
         onProgress?.({ 
@@ -84,19 +81,25 @@ export class YouTubeDownloader {
 
         logger.info(`Attempting download with proxy ${i + 1}/${proxies.length}`, { proxy, videoId });
 
-        // Use the same yt-dlp command format as upload-testcopy
-        const command = `yt-dlp --proxy "${proxy}" -f "bv*[height<=1080][height>=720]+ba[format_id*=drc][abr>=128]/bv*[height<=1080][height>=720]+ba[abr>=128]/bv*[height<=1080]+ba*[abr>=128]" -S "height,tbr,+hdr" -o "${outputTemplate}" ${youtubeLink} -N 32`;
+        // Use spawn instead of exec to handle large downloads
+        const args: string[] = [
+          '--proxy', proxy,
+          '-f', 'bv*[height<=1080][height>=720]+ba[format_id*=drc][abr>=128]/bv*[height<=1080][height>=720]+ba[abr>=128]/bv*[height<=1080]+ba*[abr>=128]',
+          '-S', 'height,tbr,+hdr',
+          '-o', outputTemplate,
+          youtubeLink,
+          '-N', '32',
+          '--progress',
+          '--newline'
+        ];
         
-        // Set timeout for download (2 minutes)
-        const timeoutMs = 2 * 60 * 1000;
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
-        try {
-          const { stdout } = await execAsync(command);
-          clearTimeout(timeoutId);
-          
-          logger.info(`yt-dlp download completed with proxy ${i + 1}`, { stdout, videoId });
+        // Set timeout for download (30 minutes for large videos)
+        const timeoutMs = 30 * 60 * 1000;
+        
+        const downloadResult = await this.runYtDlpWithSpawn(args, timeoutMs, onProgress, i, proxies.length);
+        
+        if (downloadResult.success) {
+          logger.info(`yt-dlp download completed with proxy ${i + 1}`, { videoId });
 
           onProgress?.({ 
             stage: 'downloading', 
@@ -147,13 +150,12 @@ export class YouTubeDownloader {
             videoId
           };
 
-        } catch (error) {
-          clearTimeout(timeoutId);
-          logger.warn(`Download failed with proxy ${i + 1}`, { proxy, error, videoId });
+        } else {
+          logger.warn(`Download failed with proxy ${i + 1}`, { proxy, error: downloadResult.error, videoId });
           this.cleanupPartialDownloads(videoId, outputPath);
           
           if (i === proxies.length - 1) {
-            throw new Error(`All proxies failed for video ${videoId}: ${error}`);
+            throw new Error(`All proxies failed for video ${videoId}: ${downloadResult.error}`);
           }
         }
 
@@ -168,6 +170,83 @@ export class YouTubeDownloader {
     }
 
     throw new Error(`Failed to download video ${videoId} after trying all methods`);
+  }
+
+  private async runYtDlpWithSpawn(
+    args: string[], 
+    timeoutMs: number, 
+    onProgress: ((progress: YouTubeDownloadProgress) => void) | undefined,
+    proxyIndex: number,
+    totalProxies: number
+  ): Promise<{ success: boolean; error?: string }> {
+    return new Promise((resolve) => {
+      const ytDlp = spawn('yt-dlp', args);
+      let stdout = '';
+      let stderr = '';
+      let lastProgress = 0;
+      let timeoutId: NodeJS.Timeout;
+
+      // Set timeout
+      timeoutId = setTimeout(() => {
+        ytDlp.kill('SIGTERM');
+        resolve({ success: false, error: 'Download timeout after 30 minutes' });
+      }, timeoutMs);
+
+      // Handle stdout
+      ytDlp.stdout.on('data', (data) => {
+        const output = data.toString();
+        stdout += output;
+        
+        // Parse progress from yt-dlp output
+        const progressMatch = output.match(/(\d+\.\d+)%/);
+        if (progressMatch) {
+          const percentage = parseFloat(progressMatch[1]);
+          if (percentage > lastProgress) {
+            lastProgress = percentage;
+            const adjustedProgress = 10 + (proxyIndex * 15 / totalProxies) + (percentage * 0.75);
+            
+            onProgress?.({
+              stage: 'downloading',
+              percentage: Math.min(adjustedProgress, 89),
+              message: `Downloading: ${percentage.toFixed(1)}%`
+            });
+          }
+        }
+        
+        // Log progress lines for debugging
+        if (output.includes('%') || output.includes('Downloading')) {
+          logger.debug('yt-dlp progress', { output: output.trim() });
+        }
+      });
+
+      // Handle stderr
+      ytDlp.stderr.on('data', (data) => {
+        const error = data.toString();
+        stderr += error;
+        logger.debug('yt-dlp stderr', { error: error.trim() });
+      });
+
+      // Handle process exit
+      ytDlp.on('close', (code) => {
+        clearTimeout(timeoutId);
+        
+        if (code === 0) {
+          logger.info('yt-dlp process completed successfully', { stdout: stdout.slice(-500) });
+          resolve({ success: true });
+        } else {
+          const errorMessage = stderr || stdout || `Process exited with code ${code}`;
+          logger.error('yt-dlp process failed', { code, stderr, stdout: stdout.slice(-500) });
+          resolve({ success: false, error: errorMessage });
+        }
+      });
+
+      // Handle process errors
+      ytDlp.on('error', (error) => {
+        clearTimeout(timeoutId);
+        logger.error('Failed to start yt-dlp process', { error });
+        resolve({ success: false, error: error.message });
+      });
+    });
   }
 
   private cleanupPartialDownloads(videoId: string, outputPath: string): void {
