@@ -123,36 +123,36 @@ setInterval(async () => {
 }, 6 * 60 * 60 * 1000); // Every 6 hours
 
 // Graceful shutdown
-async function gracefulShutdown(signal: string): Promise<void> {
-  logger.info(`${signal} received, starting graceful shutdown`);
+// async function gracefulShutdown(signal: string): Promise<void> {
+//   logger.info(`${signal} received, starting graceful shutdown`);
 
-  // Stop accepting new connections
-  server.close(() => {
-    logger.info('HTTP server closed');
-  });
+//   // Stop accepting new connections
+//   server.close(() => {
+//     logger.info('HTTP server closed');
+//   });
 
-  try {
-    // Stop memory monitoring
-    memoryMonitor.stopMonitoring();
+//   try {
+//     // Stop memory monitoring
+//     memoryMonitor.stopMonitoring();
 
-    // Shutdown job recovery service (saves active job states)
-    await jobRecoveryService.shutdown();
+//     // Shutdown job recovery service (saves active job states)
+//     await jobRecoveryService.shutdown();
 
-    // Close queue connections
-    await closeImportQueue();
+//     // Close queue connections
+//     await closeImportQueue();
 
-    // Close Redis connection
-    await closeRedis();
+//     // Close Redis connection
+//     await closeRedis();
 
-    logger.info('Graceful shutdown completed');
-    // process.exit(0);
-  } catch (error) {
-    logger.error('Error during graceful shutdown', {
-      error: error instanceof Error ? error.message : String(error),
-    });
-    // process.exit(1);
-  }
-}
+//     logger.info('Graceful shutdown completed');
+//     // process.exit(0);
+//   } catch (error) {
+//     logger.error('Error during graceful shutdown', {
+//       error: error instanceof Error ? error.message : String(error),
+//     });
+//     // process.exit(1);
+//   }
+// }
 
 // Handle shutdown signals
 // process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
