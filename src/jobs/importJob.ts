@@ -265,11 +265,13 @@ export async function processImportJob(
     });
 
     // Report import failure to encode-admin if this was for a specific video
-    if (videoId && job.attemptsMade >= env.MAX_RETRY_ATTEMPTS) {
+    // Note: job.attemptsMade starts at 0, so after 3 attempts it's 2 (0, 1, 2)
+    if (videoId && job.attemptsMade >= env.MAX_RETRY_ATTEMPTS - 1) {
       logger.info('Reporting import failure to encode-admin - conditions met', {
         jobId: job.id,
         videoId,
         attemptsMade: job.attemptsMade,
+        actualAttempts: job.attemptsMade + 1,
         maxRetryAttempts: env.MAX_RETRY_ATTEMPTS,
         errorMessage,
         sourceUrl: url,
@@ -279,7 +281,7 @@ export async function processImportJob(
         await encodeAdminService.reportImportFailure(videoId, {
           error: errorMessage,
           sourceUrl: url,
-          retryCount: job.attemptsMade,
+          retryCount: job.attemptsMade + 1, // Send actual attempt count
         });
         logger.info('Import failure reported to encode-admin successfully', {
           jobId: job.id,
@@ -298,19 +300,20 @@ export async function processImportJob(
         hasVideoId: !!videoId,
         videoId: videoId || 'none',
         attemptsMade: job.attemptsMade,
+        actualAttempts: job.attemptsMade + 1,
         maxRetryAttempts: env.MAX_RETRY_ATTEMPTS,
-        shouldReport: videoId && job.attemptsMade >= env.MAX_RETRY_ATTEMPTS,
-        reason: !videoId ? 'no videoId provided' : job.attemptsMade < env.MAX_RETRY_ATTEMPTS ? 'retries not exhausted' : 'unknown',
+        shouldReport: videoId && job.attemptsMade >= env.MAX_RETRY_ATTEMPTS - 1,
+        reason: !videoId ? 'no videoId provided' : job.attemptsMade < env.MAX_RETRY_ATTEMPTS - 1 ? 'retries not exhausted' : 'unknown',
       });
     }
 
     // Send failure notification if this was the last attempt
-    if (job.attemptsMade >= env.MAX_RETRY_ATTEMPTS) {
+    if (job.attemptsMade >= env.MAX_RETRY_ATTEMPTS - 1) {
       if (env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
         await sendTelegramNotification({
           type: 'failure',
           jobId: job.id || 'unknown',
-          message: `❌ Import failed after ${job.attemptsMade} attempts\n\nURL: ${url}\nError: ${errorMessage}`,
+          message: `❌ Import failed after ${job.attemptsMade + 1} attempts\n\nURL: ${url}\nError: ${errorMessage}`,
         });
       }
     }
