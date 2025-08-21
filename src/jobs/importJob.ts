@@ -266,10 +266,41 @@ export async function processImportJob(
 
     // Report import failure to encode-admin if this was for a specific video
     if (videoId && job.attemptsMade >= env.MAX_RETRY_ATTEMPTS) {
-      await encodeAdminService.reportImportFailure(videoId, {
-        error: errorMessage,
+      logger.info('Reporting import failure to encode-admin - conditions met', {
+        jobId: job.id,
+        videoId,
+        attemptsMade: job.attemptsMade,
+        maxRetryAttempts: env.MAX_RETRY_ATTEMPTS,
+        errorMessage,
         sourceUrl: url,
-        retryCount: job.attemptsMade,
+      });
+
+      try {
+        await encodeAdminService.reportImportFailure(videoId, {
+          error: errorMessage,
+          sourceUrl: url,
+          retryCount: job.attemptsMade,
+        });
+        logger.info('Import failure reported to encode-admin successfully', {
+          jobId: job.id,
+          videoId,
+        });
+      } catch (reportError) {
+        logger.error('Failed to report import failure to encode-admin', {
+          jobId: job.id,
+          videoId,
+          reportError: reportError instanceof Error ? reportError.message : String(reportError),
+        });
+      }
+    } else {
+      logger.info('Skipping import failure report to encode-admin', {
+        jobId: job.id,
+        hasVideoId: !!videoId,
+        videoId: videoId || 'none',
+        attemptsMade: job.attemptsMade,
+        maxRetryAttempts: env.MAX_RETRY_ATTEMPTS,
+        shouldReport: videoId && job.attemptsMade >= env.MAX_RETRY_ATTEMPTS,
+        reason: !videoId ? 'no videoId provided' : job.attemptsMade < env.MAX_RETRY_ATTEMPTS ? 'retries not exhausted' : 'unknown',
       });
     }
 
