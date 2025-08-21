@@ -9,11 +9,12 @@ import path from 'path';
 
 import { env } from './config/env';
 import { initSentry, Sentry } from './config/sentry';
-import { closeRedis } from './config/redis';
+// import { closeRedis } from './config/redis';
 import { logger } from './utils/logger';
 import { errorHandler, notFoundHandler } from './api/middleware/errorHandler';
 import { dashboardAuthMiddleware } from './api/middleware/dashboardAuth';
-import { startImportWorker, closeImportQueue } from './queues/importQueue';
+import { startImportWorker } from './queues/importQueue';
+// import { closeImportQueue } from './queues/importQueue';
 import { createDashboard } from './web/dashboard';
 import { getJobRecoveryService } from './services/jobRecovery';
 import { getMemoryMonitor } from './utils/memoryMonitor';
@@ -94,7 +95,7 @@ app.use(notFoundHandler);
 app.use(errorHandler);
 
 // Start server
-const server = app.listen(env.PORT, () => {
+app.listen(env.PORT, () => {
   logger.info(`Server started on port ${env.PORT}`);
   logger.info(`Environment: ${env.NODE_ENV}`);
   logger.info(`Dashboard available at http://localhost:${env.PORT}/dashboard`);

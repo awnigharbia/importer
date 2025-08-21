@@ -184,10 +184,8 @@ export class YouTubeDownloader {
       let stdout = '';
       let stderr = '';
       let lastProgress = 0;
-      let timeoutId: NodeJS.Timeout;
-
       // Set timeout
-      timeoutId = setTimeout(() => {
+      const timeoutId = setTimeout(() => {
         ytDlp.kill('SIGTERM');
         resolve({ success: false, error: 'Download timeout after 30 minutes' });
       }, timeoutMs);
