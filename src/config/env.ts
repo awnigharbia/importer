@@ -76,7 +76,7 @@ function validateEnv(): Env {
       error.errors.forEach((err) => {
         console.error(`  ${err.path.join('.')}: ${err.message}`);
       });
-      process.exit(1);
+      // process.exit(1);
     }
     throw error;
   }

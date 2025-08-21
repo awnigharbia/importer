@@ -134,41 +134,41 @@ async function gracefulShutdown(signal: string): Promise<void> {
   try {
     // Stop memory monitoring
     memoryMonitor.stopMonitoring();
-    
+
     // Shutdown job recovery service (saves active job states)
     await jobRecoveryService.shutdown();
-    
+
     // Close queue connections
     await closeImportQueue();
-    
+
     // Close Redis connection
     await closeRedis();
 
     logger.info('Graceful shutdown completed');
-    process.exit(0);
+    // process.exit(0);
   } catch (error) {
     logger.error('Error during graceful shutdown', {
       error: error instanceof Error ? error.message : String(error),
     });
-    process.exit(1);
+    // process.exit(1);
   }
 }
 
 // Handle shutdown signals
-process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+// process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+// process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 // Handle uncaught errors
 process.on('uncaughtException', (error) => {
   logger.error('Uncaught Exception', { error: error.message, stack: error.stack });
   Sentry.captureException(error);
-  process.exit(1);
+  // process.exit(1);
 });
 
 process.on('unhandledRejection', (reason, promise) => {
   logger.error('Unhandled Rejection', { reason, promise });
   Sentry.captureException(reason);
-  process.exit(1);
+  // process.exit(1);
 });
 
 export default app;

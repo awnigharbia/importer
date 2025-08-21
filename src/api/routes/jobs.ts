@@ -36,12 +36,13 @@ router.get('/jobs', async (req, res, next) => {
 
     let jobs;
     if (status) {
-      jobs = await queue.getJobs([status], start, end);
+      jobs = await queue.getJobs([status], start, end, true); // true for descending order
     } else {
       jobs = await queue.getJobs(
         ['completed', 'failed', 'active', 'waiting', 'delayed'],
         start,
-        end
+        end,
+        true // true for descending order (newest first)
       );
     }
 
