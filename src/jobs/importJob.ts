@@ -264,6 +264,15 @@ export async function processImportJob(
       attemptsMade: job.attemptsMade,
     });
 
+    // Report import failure to encode-admin if this was for a specific video
+    if (videoId && job.attemptsMade >= env.MAX_RETRY_ATTEMPTS) {
+      await encodeAdminService.reportImportFailure(videoId, {
+        error: errorMessage,
+        sourceUrl: url,
+        retryCount: job.attemptsMade,
+      });
+    }
+
     // Send failure notification if this was the last attempt
     if (job.attemptsMade >= env.MAX_RETRY_ATTEMPTS) {
       if (env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {

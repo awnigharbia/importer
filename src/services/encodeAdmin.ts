@@ -17,6 +17,12 @@ export interface VideoResponse {
   sourceLink: string;
 }
 
+export interface ReportImportFailureData {
+  error: string;
+  sourceUrl?: string;
+  retryCount?: number;
+}
+
 export class EncodeAdminService {
   private apiUrl: string;
   private apiKey: string;
@@ -78,6 +84,33 @@ export class EncodeAdminService {
         error: error instanceof Error ? error.message : String(error),
       });
       throw error;
+    }
+  }
+
+  async reportImportFailure(videoId: string, data: ReportImportFailureData): Promise<void> {
+    try {
+      await axios({
+        method: 'POST',
+        url: `${this.apiUrl}/user/videos/${videoId}/import-failed`,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.apiKey}`,
+        },
+        data,
+      });
+
+      logger.info('Reported import failure to encode-admin', {
+        videoId,
+        error: data.error,
+        retryCount: data.retryCount,
+      });
+    } catch (error) {
+      logger.error('Failed to report import failure to encode-admin', {
+        videoId,
+        data,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      // Don't throw - we don't want to fail the cleanup because webhook failed
     }
   }
 }
