@@ -18,7 +18,7 @@ export function createTusServer(): Server {
     datastore,
     maxSize: env.MAX_FILE_SIZE_MB * 1024 * 1024, // Set max file size
     respectForwardedHeaders: true,
-    namingFunction: (req) => {
+    namingFunction: (_req) => {
       // Always use a safe ID for the actual file storage
       // This avoids filesystem issues with Unicode/Arabic characters
       const safeFileName = `upload-${nanoid()}.bin`;
@@ -133,15 +133,3 @@ export function createTusServer(): Server {
   return server;
 }
 
-function parseMetadata(metadata: string): Record<string, string> {
-  const result: Record<string, string> = {};
-
-  metadata.split(',').forEach((item) => {
-    const [key, value] = item.trim().split(' ');
-    if (key && value) {
-      result[key] = value;
-    }
-  });
-
-  return result;
-}
