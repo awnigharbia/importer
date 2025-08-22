@@ -19,17 +19,13 @@ export function createTusServer(): Server {
     maxSize: env.MAX_FILE_SIZE_MB * 1024 * 1024, // Set max file size
     respectForwardedHeaders: true,
     namingFunction: (req) => {
-      const uploadMetadata = req.headers['upload-metadata'];
-      let fileName = `upload-${nanoid()}.bin`;
-
-      if (uploadMetadata) {
-        const metadataObj = parseMetadata(uploadMetadata as string);
-        if (metadataObj['filename']) {
-          fileName = Buffer.from(metadataObj['filename'], 'base64').toString('utf8');
-        }
-      }
-
-      return fileName;
+      // Always use a safe ID for the actual file storage
+      // This avoids filesystem issues with Unicode/Arabic characters
+      const safeFileName = `upload-${nanoid()}.bin`;
+      
+      // The original filename (including Arabic) will be preserved in metadata
+      // and used when uploading to Bunny Storage
+      return safeFileName;
     },
     onUploadCreate: async (_req, _res, upload) => {
       logger.info('TUS upload created', {
@@ -56,26 +52,43 @@ export function createTusServer(): Server {
         });
 
         let videoId: string | undefined;
-        if (upload.metadata && upload.metadata['video-id']) {
-          // The video ID is already decoded in the metadata object, no need to decode from base64
-          videoId = upload.metadata['video-id'];
-          logger.info('Extracted video ID from upload metadata', {
-            uploadId: upload.id,
-            videoId,
-            rawVideoId: upload.metadata['video-id'],
-          });
-        } else {
-          logger.warn('No video-id found in upload metadata', {
-            uploadId: upload.id,
-            availableMetadata: Object.keys(upload.metadata || {}),
-          });
+        let originalFileName: string | undefined;
+        
+        if (upload.metadata) {
+          // Extract video ID if present
+          if (upload.metadata['video-id']) {
+            // The video ID is already decoded in the metadata object, no need to decode from base64
+            videoId = upload.metadata['video-id'];
+            logger.info('Extracted video ID from upload metadata', {
+              uploadId: upload.id,
+              videoId,
+              rawVideoId: upload.metadata['video-id'],
+            });
+          } else {
+            logger.warn('No video-id found in upload metadata', {
+              uploadId: upload.id,
+              availableMetadata: Object.keys(upload.metadata || {}),
+            });
+          }
+          
+          // Extract original filename if present (including Arabic characters)
+          if (upload.metadata['filename']) {
+            originalFileName = upload.metadata['filename'];
+            logger.info('Extracted original filename from upload metadata', {
+              uploadId: upload.id,
+              originalFileName,
+            });
+          }
         }
+
+        // Use original filename if available, otherwise use the upload ID
+        const uploadFileName = originalFileName || upload.id;
 
         // Create a job to upload to Bunny Storage
         const jobData = {
           url: filePath,
           type: 'local' as const,
-          fileName: upload.id,
+          fileName: uploadFileName,
           requestId: `tus-${upload.id}-${Date.now()}`,
           ...(videoId && { videoId }),
         };
