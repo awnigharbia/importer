@@ -42,8 +42,25 @@ app.use(helmet({
 app.use(cors());
 app.use(compression());
 app.use(cookieParser());
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// Apply body parsers conditionally - exclude TUS upload path
+app.use((req, res, next) => {
+  // Skip body parsing for TUS upload routes
+  if (req.path.startsWith(env.TUS_PATH)) {
+    return next();
+  }
+  // Apply JSON body parser for other routes
+  express.json({ limit: '50mb' })(req, res, next);
+});
+
+app.use((req, res, next) => {
+  // Skip body parsing for TUS upload routes
+  if (req.path.startsWith(env.TUS_PATH)) {
+    return next();
+  }
+  // Apply URL-encoded body parser for other routes
+  express.urlencoded({ extended: true, limit: '50mb' })(req, res, next);
+});
 
 // Rate limiting
 const limiter = rateLimit({
