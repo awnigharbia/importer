@@ -16,3 +16,4 @@ yarn-error.log*
 coverage/
 .nyc_output/
 uploads/
+google-key.json
