@@ -3,7 +3,6 @@ import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
 import cookieParser from 'cookie-parser';
-import rateLimit from 'express-rate-limit';
 import 'express-async-errors';
 import path from 'path';
 
@@ -62,14 +61,6 @@ app.use((req, res, next) => {
   express.urlencoded({ extended: true, limit: '50mb' })(req, res, next);
 });
 
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: env.RATE_LIMIT_WINDOW_MS,
-  max: env.RATE_LIMIT_MAX_REQUESTS,
-  message: 'Too many requests from this IP, please try again later.',
-});
-
-app.use('/api/', limiter);
 
 // Static files
 app.use(express.static(path.join(__dirname, 'web/public')));

@@ -43,9 +43,6 @@ const envSchema = z.object({
   NODE_MAX_OLD_SPACE_SIZE: z.string().default('3072').transform(Number), // 3GB heap (75% of 4GB)
   STREAM_BUFFER_SIZE: z.string().default('8').transform(Number), // 8KB buffer chunks for maximum memory efficiency
 
-  // Rate limiting
-  RATE_LIMIT_WINDOW_MS: z.string().default('900000').transform(Number),
-  RATE_LIMIT_MAX_REQUESTS: z.string().default('100').transform(Number),
 
   // Google API settings
   GOOGLE_API_KEY: z.string().optional(),
