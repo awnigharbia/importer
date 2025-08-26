@@ -5,8 +5,8 @@ interface Proxy {
   url: string;
   host: string;
   port: number;
-  username?: string;
-  password?: string;
+  username: string;
+  password: string;
   type: string;
   status: string;
   priority: number;
@@ -17,8 +17,8 @@ export class ProxyService {
   private proxies: Proxy[] = [];
   private lastFetch: number = 0;
   private readonly CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
-  private readonly ADMIN_API_URL = process.env.ADMIN_API_URL || 'http://localhost:3000';
-  private readonly ADMIN_API_KEY = process.env.ADMIN_API_KEY || '';
+  private readonly ADMIN_API_URL = process.env['ADMIN_API_URL'] || 'http://localhost:3000';
+  private readonly ADMIN_API_KEY = process.env['ADMIN_API_KEY'] || '';
 
   constructor() {
     this.fetchProxies();
@@ -36,7 +36,7 @@ export class ProxyService {
         throw new Error(`Failed to fetch proxies: ${response.statusText}`);
       }
 
-      const data = await response.json();
+      const data = await response.json() as { proxies: Proxy[] };
       
       // Filter and sort proxies
       this.proxies = data.proxies
@@ -81,8 +81,8 @@ export class ProxyService {
         url,
         host: urlObj.hostname,
         port: parseInt(urlObj.port),
-        username: urlObj.username || undefined,
-        password: urlObj.password || undefined,
+        username: urlObj.username || '',
+        password: urlObj.password || '',
         type: 'http',
         status: 'active',
         priority: 1,
