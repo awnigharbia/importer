@@ -3,6 +3,7 @@ import path from 'path';
 import { nanoid } from 'nanoid';
 import { logger } from '../utils/logger';
 import { spawn } from 'child_process';
+import { proxyService } from './proxyService';
 
 export interface YouTubeDownloadOptions {
   videoId: string;
@@ -23,19 +24,6 @@ export interface YouTubeDownloadResult {
   videoId: string;
 }
 
-// Proxy configurations for downloads
-const proxies = [
-  "http://spu1x10ji0:18+1ayDlNlwuuJl0kX@isp.decodo.com:10001",
-  "http://spu1x10ji0:18+1ayDlNlwuuJl0kX@isp.decodo.com:10002",
-  "http://spu1x10ji0:18+1ayDlNlwuuJl0kX@isp.decodo.com:10003",
-  "http://spu1x10ji0:18+1ayDlNlwuuJl0kX@isp.decodo.com:10004",
-  "http://spu1x10ji0:18+1ayDlNlwuuJl0kX@isp.decodo.com:10005",
-  "http://spu1x10ji0:18+1ayDlNlwuuJl0kX@isp.decodo.com:10006",
-  "http://spu1x10ji0:18+1ayDlNlwuuJl0kX@isp.decodo.com:10007",
-  "http://spu1x10ji0:18+1ayDlNlwuuJl0kX@isp.decodo.com:10008",
-  "http://spu1x10ji0:18+1ayDlNlwuuJl0kX@isp.decodo.com:10009",
-  "http://spu1x10ji0:18+1ayDlNlwuuJl0kX@isp.decodo.com:10010",
-];
 
 export class YouTubeDownloader {
   private tempDir: string;
@@ -68,9 +56,17 @@ export class YouTubeDownloader {
     // Clean up any existing files for this video ID before starting
     this.cleanupPartialDownloads(videoId, outputPath);
 
+    // Get proxies from proxy service
+    const proxies = await proxyService.getProxies();
+    
+    if (proxies.length === 0) {
+      throw new Error('No proxies available for download');
+    }
+
     // Try each proxy until one works
     for (let i = 0; i < proxies.length; i++) {
       const proxy = proxies[i]!;
+      const startTime = Date.now();
       
       try {
         onProgress?.({ 
@@ -99,7 +95,11 @@ export class YouTubeDownloader {
         const downloadResult = await this.runYtDlpWithSpawn(args, timeoutMs, onProgress, i, proxies.length);
         
         if (downloadResult.success) {
-          logger.info(`yt-dlp download completed with proxy ${i + 1}`, { videoId });
+          const responseTime = Date.now() - startTime;
+          logger.info(`yt-dlp download completed with proxy ${i + 1}`, { videoId, responseTime });
+          
+          // Report successful proxy usage
+          await proxyService.reportProxyResult(proxy, true, responseTime);
 
           onProgress?.({ 
             stage: 'downloading', 
@@ -154,6 +154,9 @@ export class YouTubeDownloader {
           logger.warn(`Download failed with proxy ${i + 1}`, { proxy, error: downloadResult.error, videoId });
           this.cleanupPartialDownloads(videoId, outputPath);
           
+          // Report failed proxy usage
+          await proxyService.reportProxyResult(proxy, false);
+          
           if (i === proxies.length - 1) {
             throw new Error(`All proxies failed for video ${videoId}: ${downloadResult.error}`);
           }
@@ -162,6 +165,9 @@ export class YouTubeDownloader {
       } catch (error) {
         logger.warn(`Error with proxy ${i + 1}`, { proxy, error, videoId });
         this.cleanupPartialDownloads(videoId, outputPath);
+        
+        // Report failed proxy usage
+        await proxyService.reportProxyResult(proxy, false);
         
         if (i === proxies.length - 1) {
           throw new Error(`Failed to download video ${videoId} after trying all proxies`);
