@@ -23,6 +23,7 @@ import importRoutes from './api/routes/import';
 import jobsRoutes from './api/routes/jobs';
 import tusRoutes from './api/routes/tus';
 import authRoutes from './api/routes/auth';
+import ytdlpRoutes from './api/routes/ytdlp';
 
 // Initialize Sentry
 initSentry();
@@ -79,6 +80,7 @@ app.get('/health', (_req, res) => {
 app.use('/api', authRoutes);
 app.use('/api', importRoutes);
 app.use('/api', jobsRoutes);
+app.use('/api/ytdlp', ytdlpRoutes);
 app.use(env.TUS_PATH, tusRoutes);
 
 // Bull Board Dashboard (protected)

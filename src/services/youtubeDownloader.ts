@@ -4,6 +4,7 @@ import { nanoid } from 'nanoid';
 import { logger } from '../utils/logger';
 import { spawn } from 'child_process';
 import { proxyService } from './proxyService';
+import { ytdlpManager } from './ytdlpManager';
 
 export interface YouTubeDownloadOptions {
   videoId: string;
@@ -43,6 +44,25 @@ export class YouTubeDownloader {
     const { videoId, outputPath, onProgress } = options;
     
     logger.info('Starting YouTube video download with yt-dlp', { videoId });
+
+    // Check for yt-dlp updates before download
+    try {
+      const updateResult = await ytdlpManager.checkAndUpdate();
+      if (updateResult) {
+        if (updateResult.success && updateResult.previousVersion !== updateResult.newVersion) {
+          logger.info('yt-dlp was updated before download', {
+            previousVersion: updateResult.previousVersion,
+            newVersion: updateResult.newVersion,
+          });
+        } else if (!updateResult.success) {
+          logger.warn('yt-dlp update check failed, continuing with current version', {
+            error: updateResult.error,
+          });
+        }
+      }
+    } catch (error) {
+      logger.warn('Failed to check for yt-dlp updates, continuing with current version', { error });
+    }
 
     // Ensure output directory exists
     if (!fs.existsSync(outputPath)) {
