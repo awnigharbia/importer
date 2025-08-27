@@ -35,6 +35,15 @@ export class YtdlpManager {
     this.encodeAdminUrl = process.env['ENCODE_ADMIN_URL'] || 'http://localhost:3000';
   }
 
+  /**
+   * Get headers for internal API requests
+   */
+  private getInternalHeaders(): Record<string, string> {
+    return {
+      'x-internal-secret': process.env['INTERNAL_API_SECRET'] || '',
+    };
+  }
+
   static getInstance(): YtdlpManager {
     if (!YtdlpManager.instance) {
       YtdlpManager.instance = new YtdlpManager();
@@ -47,7 +56,9 @@ export class YtdlpManager {
    */
   async getSettings(): Promise<YtdlpSettings> {
     try {
-      const response = await axios.get(`${this.encodeAdminUrl}/api/settings`);
+      const response = await axios.get(`${this.encodeAdminUrl}/api/internal/settings`, {
+        headers: this.getInternalHeaders(),
+      });
       const data = response.data;
       
       this.settings = {
@@ -93,7 +104,9 @@ export class YtdlpManager {
         updateData.ytdlpLastChecked = updates.lastChecked;
       }
       
-      await axios.put(`${this.encodeAdminUrl}/api/settings`, updateData);
+      await axios.put(`${this.encodeAdminUrl}/api/internal/settings`, updateData, {
+        headers: this.getInternalHeaders(),
+      });
       logger.info('Updated yt-dlp settings in encode-admin', { updates });
     } catch (error) {
       logger.error('Failed to update yt-dlp settings', { error });

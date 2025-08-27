@@ -17,8 +17,8 @@ export class ProxyService {
   private proxies: Proxy[] = [];
   private lastFetch: number = 0;
   private readonly CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
-  private readonly ADMIN_API_URL = process.env['ADMIN_API_URL'] || 'http://localhost:3000';
-  private readonly ADMIN_API_KEY = process.env['ADMIN_API_KEY'] || '';
+  private readonly ADMIN_API_URL = process.env['ENCODE_ADMIN_URL'] || 'http://localhost:3000';
+  private readonly INTERNAL_API_SECRET = process.env['INTERNAL_API_SECRET'] || '';
 
   constructor() {
     this.fetchProxies();
@@ -26,9 +26,9 @@ export class ProxyService {
 
   async fetchProxies(): Promise<void> {
     try {
-      const response = await fetch(`${this.ADMIN_API_URL}/api/importer/proxies`, {
+      const response = await fetch(`${this.ADMIN_API_URL}/api/internal/proxies`, {
         headers: {
-          'Authorization': `Bearer ${this.ADMIN_API_KEY}`,
+          'x-internal-secret': this.INTERNAL_API_SECRET,
         },
       });
 
@@ -36,18 +36,16 @@ export class ProxyService {
         throw new Error(`Failed to fetch proxies: ${response.statusText}`);
       }
 
-      const data = await response.json() as { proxies: Proxy[] };
+      const data = await response.json() as Proxy[];
       
-      // Filter and sort proxies
-      this.proxies = data.proxies
-        .filter((p: Proxy) => p.status === 'active')
-        .sort((a: Proxy, b: Proxy) => {
-          // Sort by priority first, then by success rate
-          if (b.priority !== a.priority) {
-            return b.priority - a.priority;
-          }
-          return b.successRate - a.successRate;
-        });
+      // Sort proxies (already filtered for active status by the API)
+      this.proxies = data.sort((a: Proxy, b: Proxy) => {
+        // Sort by priority first, then by success rate
+        if (b.priority !== a.priority) {
+          return b.priority - a.priority;
+        }
+        return (b.successRate || 0) - (a.successRate || 0);
+      });
 
       this.lastFetch = Date.now();
       logger.info(`Fetched ${this.proxies.length} active proxies from database`);
@@ -105,18 +103,20 @@ export class ProxyService {
     return this.proxies.map(p => p.url);
   }
 
-  async reportProxyResult(proxyUrl: string, success: boolean, responseTime?: number): Promise<void> {
+  async reportProxyResult(proxyUrl: string, _success: boolean, _responseTime?: number): Promise<void> {
     try {
       const proxy = this.proxies.find(p => p.url === proxyUrl);
       if (!proxy || proxy.id.startsWith('hardcoded-')) {
         return; // Don't report for hardcoded proxies
       }
 
-      // Report result back to admin API
-      await fetch(`${this.ADMIN_API_URL}/api/proxies/${proxy.id}/report`, {
+      // Report result back to admin API (for now, skip reporting as we need to create internal endpoint)
+      // TODO: Create internal endpoint for proxy reporting
+      /*
+      await fetch(`${this.ADMIN_API_URL}/api/internal/proxies/${proxy.id}/report`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${this.ADMIN_API_KEY}`,
+          'x-internal-secret': this.INTERNAL_API_SECRET,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -124,6 +124,7 @@ export class ProxyService {
           responseTime,
         }),
       });
+      */
     } catch (error) {
       // Silently fail - don't interrupt the download process
       logger.debug('Failed to report proxy result:', error);
