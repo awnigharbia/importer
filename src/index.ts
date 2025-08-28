@@ -22,6 +22,7 @@ import { getMemoryMonitor } from './utils/memoryMonitor';
 import importRoutes from './api/routes/import';
 import jobsRoutes from './api/routes/jobs';
 import tusRoutes from './api/routes/tus';
+import tusStatusRoutes from './api/routes/tus-status';
 import authRoutes from './api/routes/auth';
 import ytdlpRoutes from './api/routes/ytdlp';
 
@@ -80,6 +81,7 @@ app.get('/health', (_req, res) => {
 app.use('/api', authRoutes);
 app.use('/api', importRoutes);
 app.use('/api', jobsRoutes);
+app.use('/api', tusStatusRoutes);
 app.use('/api/ytdlp', ytdlpRoutes);
 app.use(env.TUS_PATH, tusRoutes);
 

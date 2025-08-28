@@ -11,6 +11,7 @@ export interface ImportJobData {
   fileName?: string | undefined;
   requestId: string;
   videoId?: string; // For TUS uploads, the pre-created video ID
+  tusUploadId?: string; // TUS upload ID for tracking
 }
 
 export interface ImportJobResult {

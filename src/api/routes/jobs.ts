@@ -64,6 +64,9 @@ router.get('/jobs', async (req, res, next) => {
       }))
     );
 
+    // Sort jobs by timestamp in descending order (newest first)
+    jobData.sort((a, b) => b.timestamp - a.timestamp);
+
     res.json({
       success: true,
       data: {

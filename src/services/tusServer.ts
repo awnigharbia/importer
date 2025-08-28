@@ -5,9 +5,11 @@ import { nanoid } from 'nanoid';
 import { env } from '../config/env';
 import { logger } from '../utils/logger';
 import { addImportJob } from '../queues/importQueue';
+import { getRedisClient } from '../config/redis';
 
 export function createTusServer(): Server {
   const uploadDir = path.join(env.TEMP_DIR, 'tus-uploads');
+  const redis = getRedisClient();
 
   const datastore = new FileStore({
     directory: uploadDir,
@@ -32,6 +34,21 @@ export function createTusServer(): Server {
         uploadId: upload.id,
         size: upload.size,
       });
+      
+      // Store initial upload status in Redis (expires after 1 hour)
+      await redis.setex(
+        `tus:upload:${upload.id}`,
+        3600,
+        JSON.stringify({
+          id: upload.id,
+          size: upload.size,
+          offset: 0,
+          percentage: 0,
+          status: 'uploading',
+          createdAt: new Date().toISOString(),
+        })
+      );
+      
       return { res: _res };
     },
     onUploadFinish: async (_req, _res, upload) => {
@@ -90,10 +107,26 @@ export function createTusServer(): Server {
           type: 'local' as const,
           fileName: uploadFileName,
           requestId: `tus-${upload.id}-${Date.now()}`,
+          tusUploadId: upload.id,
           ...(videoId && { videoId }),
         };
 
-        await addImportJob(jobData);
+        const jobId = await addImportJob(jobData);
+
+        // Update Redis status to complete and store job ID
+        await redis.setex(
+          `tus:upload:${upload.id}`,
+          3600,
+          JSON.stringify({
+            id: upload.id,
+            size: upload.size,
+            offset: upload.size,
+            percentage: 100,
+            status: 'completed',
+            jobId: jobId,
+            completedAt: new Date().toISOString(),
+          })
+        );
 
         logger.info('TUS upload job created', {
           uploadId: upload.id,
@@ -115,11 +148,28 @@ export function createTusServer(): Server {
     logger.debug('TUS POST_CREATE event', { uploadId: upload.id });
   });
 
-  server.on(EVENTS.POST_RECEIVE, (_req, _res, upload) => {
+  server.on(EVENTS.POST_RECEIVE, async (_req, _res, upload) => {
+    const percentage = upload.size ? Math.round((upload.offset / upload.size) * 100) : 0;
+    
     logger.debug('TUS POST_RECEIVE event', {
       uploadId: upload.id,
       offset: upload.offset,
+      percentage,
     });
+    
+    // Update progress in Redis
+    await redis.setex(
+      `tus:upload:${upload.id}`,
+      3600,
+      JSON.stringify({
+        id: upload.id,
+        size: upload.size,
+        offset: upload.offset,
+        percentage,
+        status: 'uploading',
+        updatedAt: new Date().toISOString(),
+      })
+    );
   });
 
   server.on(EVENTS.POST_FINISH, (_req, _res, upload) => {
