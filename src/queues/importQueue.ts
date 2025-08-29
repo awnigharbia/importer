@@ -20,6 +20,7 @@ export interface ImportJobResult {
   fileSize?: number;
   error?: string;
   retryCount?: number;
+  proxyLogs?: ProxyLog[];
 }
 
 export interface ProxyLog {

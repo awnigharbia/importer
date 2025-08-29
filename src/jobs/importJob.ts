@@ -28,6 +28,7 @@ export async function processImportJob(
   let downloadResult;
   let tempFilePath: string | null = null;
   let tempFiles: string[] = [];
+  let proxyLogs: ImportJobProgress['proxyLogs'] = undefined;
 
   try {
     // Log initial memory usage
@@ -55,7 +56,7 @@ export async function processImportJob(
         throw new Error('Invalid YouTube URL: cannot extract video ID');
       }
 
-      const proxyLogs: ImportJobProgress['proxyLogs'] = [];
+      proxyLogs = [];
       
       downloadResult = await youtubeDownloader.download({
         videoId: youtubeVideoId,
@@ -69,7 +70,7 @@ export async function processImportJob(
           } as ImportJobProgress);
         },
         onProxyLog: (log) => {
-          proxyLogs.push(log);
+          proxyLogs!.push(log);
           void job.updateProgress({
             stage: 'downloading',
             percentage: job.progress as number || 0,
@@ -257,6 +258,7 @@ export async function processImportJob(
       fileName: uploadResult.fileName,
       fileSize: uploadResult.fileSize,
       retryCount: job.attemptsMade,
+      ...(proxyLogs && proxyLogs.length > 0 ? { proxyLogs } : {}),
     };
 
     // Send success notification

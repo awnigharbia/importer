@@ -50,18 +50,30 @@ router.get('/jobs', async (req, res, next) => {
     const totalJobs = Object.values(jobCount).reduce((sum, count) => sum + count, 0);
 
     const jobData = await Promise.all(
-      jobs.map(async (job) => ({
-        id: job.id,
-        data: job.data,
-        status: await job.getState(),
-        progress: job.progress,
-        returnValue: job.returnvalue,
-        failedReason: job.failedReason,
-        attemptsMade: job.attemptsMade,
-        timestamp: job.timestamp,
-        processedOn: job.processedOn,
-        finishedOn: job.finishedOn,
-      }))
+      jobs.map(async (job) => {
+        const state = await job.getState();
+        // Get proxy logs from either progress or return value
+        let proxyLogs = undefined;
+        if (typeof job.progress === 'object' && job.progress && 'proxyLogs' in job.progress) {
+          proxyLogs = (job.progress as any).proxyLogs;
+        } else if (job.returnvalue?.proxyLogs) {
+          proxyLogs = job.returnvalue.proxyLogs;
+        }
+        
+        return {
+          id: job.id,
+          data: job.data,
+          status: state,
+          progress: job.progress,
+          returnValue: job.returnvalue,
+          failedReason: job.failedReason,
+          attemptsMade: job.attemptsMade,
+          timestamp: job.timestamp,
+          processedOn: job.processedOn,
+          finishedOn: job.finishedOn,
+          proxyLogs,
+        };
+      })
     );
 
     res.json({
@@ -95,6 +107,14 @@ router.get('/jobs/:id', async (req, res, next) => {
 
     const state = await job.getState();
     const logs = await queue.getJobLogs(id);
+    
+    // Get proxy logs from either progress or return value
+    let proxyLogs = undefined;
+    if (typeof job.progress === 'object' && job.progress && 'proxyLogs' in job.progress) {
+      proxyLogs = (job.progress as any).proxyLogs;
+    } else if (job.returnvalue?.proxyLogs) {
+      proxyLogs = job.returnvalue.proxyLogs;
+    }
 
     res.json({
       success: true,
@@ -111,6 +131,7 @@ router.get('/jobs/:id', async (req, res, next) => {
         processedOn: job.processedOn,
         finishedOn: job.finishedOn,
         logs: logs.logs,
+        proxyLogs,
       },
     });
   } catch (error) {
