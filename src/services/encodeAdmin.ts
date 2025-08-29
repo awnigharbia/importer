@@ -49,6 +49,30 @@ export class EncodeAdminService {
     });
   }
 
+  async getVideoName(videoId: string): Promise<string | null> {
+    try {
+      const response = await axios({
+        method: 'GET',
+        url: `${this.apiUrl}/user/videos/${videoId}`,
+        headers: {
+          'Authorization': `Bearer ${this.apiKey}`,
+        },
+        timeout: 5000, // 5 second timeout
+      });
+
+      if (response.data && response.data.name) {
+        return response.data.name;
+      }
+      return null;
+    } catch (error) {
+      logger.error('Failed to fetch video name from encode-admin', {
+        videoId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
+  }
+
   async createVideo(data: CreateVideoData): Promise<VideoResponse> {
     try {
       const response = await axios({

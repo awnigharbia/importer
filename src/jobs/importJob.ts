@@ -263,10 +263,26 @@ export async function processImportJob(
 
     // Send success notification
     if (env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
+      let lessonName: string | null = null;
+      
+      // Fetch lesson name if videoId is available
+      if (videoId) {
+        try {
+          lessonName = await encodeAdminService.getVideoName(videoId);
+        } catch (error) {
+          logger.warn('Failed to fetch lesson name for notification', {
+            videoId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+      
+      const lessonInfo = lessonName ? `Lesson: ${lessonName}\n` : '';
+      
       await sendTelegramNotification({
         type: 'success',
         jobId: job.id || 'unknown',
-        message: `✅ Import completed successfully\n\nFile: ${uploadResult.fileName}\nSize: ${(uploadResult.fileSize / 1024 / 1024).toFixed(2)}MB\nCDN URL: ${uploadResult.cdnUrl}`,
+        message: `✅ Import completed successfully\n\n${lessonInfo}File: ${uploadResult.fileName}\nSize: ${(uploadResult.fileSize / 1024 / 1024).toFixed(2)}MB\nCDN URL: ${uploadResult.cdnUrl}`,
       });
     }
 
@@ -351,10 +367,26 @@ export async function processImportJob(
     // Send failure notification if this was the last attempt
     if (job.attemptsMade >= env.MAX_RETRY_ATTEMPTS - 1) {
       if (env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
+        let lessonName: string | null = null;
+        
+        // Fetch lesson name if videoId is available
+        if (videoId) {
+          try {
+            lessonName = await encodeAdminService.getVideoName(videoId);
+          } catch (error) {
+            logger.warn('Failed to fetch lesson name for failure notification', {
+              videoId,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
+        
+        const lessonInfo = lessonName ? `Lesson: ${lessonName}\n` : '';
+        
         await sendTelegramNotification({
           type: 'failure',
           jobId: job.id || 'unknown',
-          message: `❌ Import failed after ${job.attemptsMade + 1} attempts\n\nURL: ${url}\nError: ${errorMessage}`,
+          message: `❌ Import failed after ${job.attemptsMade + 1} attempts\n\n${lessonInfo}URL: ${url}\nError: ${errorMessage}`,
         });
       }
     }
