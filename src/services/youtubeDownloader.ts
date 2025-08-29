@@ -6,10 +6,13 @@ import { spawn } from 'child_process';
 import { proxyService } from './proxyService';
 import { ytdlpManager } from './ytdlpManager';
 
+import { ProxyLog } from '../queues/importQueue';
+
 export interface YouTubeDownloadOptions {
   videoId: string;
   outputPath: string;
   onProgress?: (progress: YouTubeDownloadProgress) => void;
+  onProxyLog?: (log: ProxyLog) => void;
 }
 
 export interface YouTubeDownloadProgress {
@@ -41,7 +44,8 @@ export class YouTubeDownloader {
   }
 
   async download(options: YouTubeDownloadOptions): Promise<YouTubeDownloadResult> {
-    const { videoId, outputPath, onProgress } = options;
+    const { videoId, outputPath, onProgress, onProxyLog } = options;
+    const proxyLogs: ProxyLog[] = [];
     
     logger.info('Starting YouTube video download with yt-dlp', { videoId });
 
@@ -87,6 +91,12 @@ export class YouTubeDownloader {
     for (let i = 0; i < proxies.length; i++) {
       const proxy = proxies[i]!;
       const startTime = Date.now();
+      const proxyLog: ProxyLog = {
+        proxyUrl: proxy,
+        attemptNumber: i + 1,
+        startTime: new Date().toISOString(),
+        success: false
+      };
       
       try {
         onProgress?.({ 
@@ -117,6 +127,13 @@ export class YouTubeDownloader {
         if (downloadResult.success) {
           const responseTime = Date.now() - startTime;
           logger.info(`yt-dlp download completed with proxy ${i + 1}`, { videoId, responseTime });
+          
+          // Update proxy log with success
+          proxyLog.success = true;
+          proxyLog.endTime = new Date().toISOString();
+          proxyLog.responseTime = responseTime;
+          proxyLogs.push(proxyLog);
+          onProxyLog?.(proxyLog);
           
           // Report successful proxy usage
           await proxyService.reportProxyResult(proxy, true, responseTime);
@@ -172,6 +189,15 @@ export class YouTubeDownloader {
 
         } else {
           logger.warn(`Download failed with proxy ${i + 1}`, { proxy, error: downloadResult.error, videoId });
+          
+          // Update proxy log with failure
+          proxyLog.success = false;
+          proxyLog.endTime = new Date().toISOString();
+          proxyLog.responseTime = Date.now() - startTime;
+          proxyLog.errorMessage = downloadResult.error || 'Download failed';
+          proxyLogs.push(proxyLog);
+          onProxyLog?.(proxyLog);
+          
           this.cleanupPartialDownloads(videoId, outputPath);
           
           // Report failed proxy usage
@@ -184,6 +210,15 @@ export class YouTubeDownloader {
 
       } catch (error) {
         logger.warn(`Error with proxy ${i + 1}`, { proxy, error, videoId });
+        
+        // Update proxy log with error
+        proxyLog.success = false;
+        proxyLog.endTime = new Date().toISOString();
+        proxyLog.responseTime = Date.now() - startTime;
+        proxyLog.errorMessage = error instanceof Error ? error.message : String(error);
+        proxyLogs.push(proxyLog);
+        onProxyLog?.(proxyLog);
+        
         this.cleanupPartialDownloads(videoId, outputPath);
         
         // Report failed proxy usage

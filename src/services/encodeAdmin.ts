@@ -6,27 +6,32 @@ import { retry } from '../utils/retry';
 export interface CreateVideoData {
   name: string;
   sourceLink: string;
+  importJobId?: string;
 }
 
 export interface UpdateVideoSourceData {
   sourceLink: string;
+  importJobId?: string;
 }
 
 export interface VideoResponse {
   id: string;
   name: string;
   sourceLink: string;
+  importJobId?: string;
 }
 
 export interface ReportImportFailureData {
   error: string;
   sourceUrl?: string;
   retryCount?: number;
+  importJobId?: string;
 }
 
 export interface ReportImportSuccessData {
   sourceLink: string;
   isRetry?: boolean;
+  importJobId?: string;
 }
 
 export class EncodeAdminService {
@@ -71,7 +76,7 @@ export class EncodeAdminService {
     }
   }
 
-  async updateVideoSourceLink(videoId: string, sourceLink: string): Promise<VideoResponse> {
+  async updateVideoSourceLink(videoId: string, sourceLink: string, importJobId?: string): Promise<VideoResponse> {
     try {
       const response = await retry(
         async () => {
@@ -82,7 +87,7 @@ export class EncodeAdminService {
               'Content-Type': 'application/json',
               'Authorization': `Bearer ${this.apiKey}`,
             },
-            data: { sourceLink },
+            data: { sourceLink, importJobId },
             timeout: 10000, // 10 second timeout
           });
         },

@@ -55,6 +55,8 @@ export async function processImportJob(
         throw new Error('Invalid YouTube URL: cannot extract video ID');
       }
 
+      const proxyLogs: ImportJobProgress['proxyLogs'] = [];
+      
       downloadResult = await youtubeDownloader.download({
         videoId: youtubeVideoId,
         outputPath: env.TEMP_DIR || '/tmp',
@@ -63,6 +65,16 @@ export async function processImportJob(
             stage: 'downloading',
             percentage: progress.percentage,
             message: progress.message,
+            proxyLogs,
+          } as ImportJobProgress);
+        },
+        onProxyLog: (log) => {
+          proxyLogs.push(log);
+          void job.updateProgress({
+            stage: 'downloading',
+            percentage: job.progress as number || 0,
+            message: `Proxy attempt ${log.attemptNumber}: ${log.success ? 'Success' : 'Failed'}`,
+            proxyLogs,
           } as ImportJobProgress);
         },
       });
@@ -172,21 +184,24 @@ export async function processImportJob(
           await encodeAdminService.reportImportSuccess(videoId, {
             sourceLink: uploadResult.cdnUrl,
             isRetry: true,
+            ...(job.id ? { importJobId: job.id } : {}),
           });
           logger.info('Reported import success to encode-admin (re-import)', {
             videoId,
             cdnUrl: uploadResult.cdnUrl,
             importType: type,
+            importJobId: job.id,
             attemptsMade: job.attemptsMade,
             isRetry: true,
           });
         } else {
           // For initial imports, use the source-link endpoint
-          await encodeAdminService.updateVideoSourceLink(videoId, uploadResult.cdnUrl);
+          await encodeAdminService.updateVideoSourceLink(videoId, uploadResult.cdnUrl, job.id);
           logger.info('Updated video source link in encode-admin (initial import)', {
             videoId,
             cdnUrl: uploadResult.cdnUrl,
             importType: type,
+            importJobId: job.id,
             attemptsMade: job.attemptsMade,
             isRetry: false,
           });
@@ -206,10 +221,12 @@ export async function processImportJob(
         const video = await encodeAdminService.createVideo({
           name: videoName,
           sourceLink: uploadResult.cdnUrl,
+          ...(job.id ? { importJobId: job.id } : {}),
         });
         logger.info('Created video in encode-admin', {
           videoId: video.id,
           cdnUrl: uploadResult.cdnUrl,
+          importJobId: job.id,
         });
       } catch (error) {
         logger.error('Failed to create video in encode-admin', {

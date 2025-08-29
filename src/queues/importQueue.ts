@@ -22,10 +22,23 @@ export interface ImportJobResult {
   retryCount?: number;
 }
 
+export interface ProxyLog {
+  proxyUrl: string;
+  proxyId?: string;
+  attemptNumber: number;
+  startTime: string;
+  endTime?: string;
+  responseTime?: number;
+  success: boolean;
+  errorMessage?: string;
+  statusCode?: number;
+}
+
 export interface ImportJobProgress {
   stage: 'downloading' | 'uploading';
   percentage: number;
   message: string;
+  proxyLogs?: ProxyLog[];
 }
 
 let importQueue: Queue<ImportJobData, ImportJobResult> | null = null;
