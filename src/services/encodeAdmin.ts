@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { logger } from '../utils/logger';
 import { env } from '../config/env';
+import { retry } from '../utils/retry';
 
 export interface CreateVideoData {
   name: string;
@@ -21,6 +22,11 @@ export interface ReportImportFailureData {
   error: string;
   sourceUrl?: string;
   retryCount?: number;
+}
+
+export interface ReportImportSuccessData {
+  sourceLink: string;
+  isRetry?: boolean;
 }
 
 export class EncodeAdminService {
@@ -67,15 +73,31 @@ export class EncodeAdminService {
 
   async updateVideoSourceLink(videoId: string, sourceLink: string): Promise<VideoResponse> {
     try {
-      const response = await axios({
-        method: 'PUT',
-        url: `${this.apiUrl}/user/videos/${videoId}/source-link`,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.apiKey}`,
+      const response = await retry(
+        async () => {
+          return await axios({
+            method: 'PUT',
+            url: `${this.apiUrl}/user/videos/${videoId}/source-link`,
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${this.apiKey}`,
+            },
+            data: { sourceLink },
+            timeout: 10000, // 10 second timeout
+          });
         },
-        data: { sourceLink },
-      });
+        {
+          maxAttempts: 3,
+          delay: 1000,
+          maxDelay: 5000,
+          onRetry: (error, attempt) => {
+            logger.warn(`Retrying video source link update (attempt ${attempt})`, {
+              videoId,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          },
+        }
+      );
 
       logger.info('Updated video source link in encode-admin', {
         videoId,
@@ -90,6 +112,95 @@ export class EncodeAdminService {
         error: error instanceof Error ? error.message : String(error),
       });
       throw error;
+    }
+  }
+
+  async reportImportSuccess(videoId: string, data: ReportImportSuccessData): Promise<void> {
+    const requestUrl = `${this.apiUrl}/user/videos/${videoId}/import-success`;
+    
+    logger.info('Starting import success report to encode-admin', {
+      videoId,
+      apiUrl: this.apiUrl,
+      requestUrl,
+      hasApiKey: !!this.apiKey,
+      apiKeyLength: this.apiKey ? this.apiKey.length : 0,
+      data: {
+        sourceLink: data.sourceLink,
+        isRetry: data.isRetry,
+      }
+    });
+
+    try {
+      // Use retry logic for transient failures
+      const response = await retry(
+        async () => {
+          return await axios({
+            method: 'POST',
+            url: requestUrl,
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${this.apiKey}`,
+            },
+            data,
+            timeout: 10000, // 10 second timeout
+          });
+        },
+        {
+          maxAttempts: 3,
+          delay: 1000,
+          maxDelay: 5000,
+          onRetry: (error, attempt) => {
+            logger.warn(`Retrying import success report to encode-admin (attempt ${attempt})`, {
+              videoId,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          },
+        }
+      );
+
+      logger.info('Successfully reported import success to encode-admin', {
+        videoId,
+        responseStatus: response.status,
+        responseData: response.data,
+        sourceLink: data.sourceLink,
+        isRetry: data.isRetry,
+      });
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        logger.error('HTTP error reporting import success to encode-admin', {
+          videoId,
+          requestUrl,
+          status: error.response?.status,
+          statusText: error.response?.statusText,
+          responseData: error.response?.data,
+          requestData: data,
+          errorMessage: error.message,
+          errorCode: error.code,
+        });
+        
+        // If the import-success endpoint doesn't exist (404), fall back to source-link endpoint
+        if (error.response?.status === 404 && data.sourceLink) {
+          logger.info('Falling back to source-link endpoint for backward compatibility', { videoId });
+          try {
+            await this.updateVideoSourceLink(videoId, data.sourceLink);
+            logger.info('Successfully updated via fallback source-link endpoint', { videoId });
+          } catch (fallbackError) {
+            logger.error('Fallback to source-link endpoint also failed', {
+              videoId,
+              error: fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
+            });
+          }
+        }
+      } else {
+        logger.error('Unknown error reporting import success to encode-admin', {
+          videoId,
+          requestUrl,
+          data,
+          error: error instanceof Error ? error.message : String(error),
+          errorStack: error instanceof Error ? error.stack : undefined,
+        });
+      }
+      // Don't throw - we don't want to fail the job because notification failed
     }
   }
 

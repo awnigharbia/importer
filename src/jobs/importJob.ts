@@ -164,16 +164,38 @@ export async function processImportJob(
     if (videoId) {
       // Update existing video with source link (for TUS uploads, YouTube, or Google Drive imports with video ID)
       try {
-        await encodeAdminService.updateVideoSourceLink(videoId, uploadResult.cdnUrl);
-        logger.info('Updated video source link in encode-admin', {
-          videoId,
-          cdnUrl: uploadResult.cdnUrl,
-          importType: type,
-        });
+        // Check if this is a retry/re-import (attemptsMade > 0 means this is not the first attempt)
+        const isRetry = job.attemptsMade > 0;
+        
+        if (isRetry) {
+          // For re-imports, use the import-success endpoint to properly handle failed->queued transition
+          await encodeAdminService.reportImportSuccess(videoId, {
+            sourceLink: uploadResult.cdnUrl,
+            isRetry: true,
+          });
+          logger.info('Reported import success to encode-admin (re-import)', {
+            videoId,
+            cdnUrl: uploadResult.cdnUrl,
+            importType: type,
+            attemptsMade: job.attemptsMade,
+            isRetry: true,
+          });
+        } else {
+          // For initial imports, use the source-link endpoint
+          await encodeAdminService.updateVideoSourceLink(videoId, uploadResult.cdnUrl);
+          logger.info('Updated video source link in encode-admin (initial import)', {
+            videoId,
+            cdnUrl: uploadResult.cdnUrl,
+            importType: type,
+            attemptsMade: job.attemptsMade,
+            isRetry: false,
+          });
+        }
       } catch (error) {
         logger.error('Failed to update video in encode-admin', {
           videoId,
           error: error instanceof Error ? error.message : String(error),
+          attemptsMade: job.attemptsMade,
         });
         // Don't fail the job if encode-admin update fails
       }
