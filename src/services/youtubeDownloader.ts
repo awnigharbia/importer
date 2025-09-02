@@ -110,7 +110,7 @@ export class YouTubeDownloader {
         // Use spawn instead of exec to handle large downloads
         const args: string[] = [
           '--proxy', proxy,
-          '-f', 'bv*[height<=1080][vcodec!~="(vp9.2|av01)")][dynamic_range!=HDR]+ba/b[height<=1080][vcodec!~="(vp9.2|av01)")][dynamic_range!=HDR]',
+          '-f', 'bv*[height<=1080][vcodec!*=vp09.02][vcodec!*=av01][dynamic_range!=HDR][dynamic_range!=HDR10][dynamic_range!=HDR12]+ba/b[height<=1080][dynamic_range!=HDR]',
           '-S', 'height,tbr,+hdr',
           '-o', outputTemplate,
           youtubeLink,
