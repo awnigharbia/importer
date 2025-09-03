@@ -46,7 +46,7 @@ export class YouTubeDownloader {
   async download(options: YouTubeDownloadOptions): Promise<YouTubeDownloadResult> {
     const { videoId, outputPath, onProgress, onProxyLog } = options;
     const proxyLogs: ProxyLog[] = [];
-    
+
     logger.info('Starting YouTube video download with yt-dlp', { videoId });
 
     // Check for yt-dlp updates before download
@@ -82,7 +82,7 @@ export class YouTubeDownloader {
 
     // Get proxies from proxy service
     const proxies = await proxyService.getProxies();
-    
+
     if (proxies.length === 0) {
       throw new Error('No proxies available for download');
     }
@@ -97,12 +97,12 @@ export class YouTubeDownloader {
         startTime: new Date().toISOString(),
         success: false
       };
-      
+
       try {
-        onProgress?.({ 
-          stage: 'downloading', 
-          percentage: 10 + (i * 15), 
-          message: `Attempting download with proxy ${i + 1}/${proxies.length}...` 
+        onProgress?.({
+          stage: 'downloading',
+          percentage: 10 + (i * 15),
+          message: `Attempting download with proxy ${i + 1}/${proxies.length}...`
         });
 
         logger.info(`Attempting download with proxy ${i + 1}/${proxies.length}`, { proxy, videoId });
@@ -114,40 +114,40 @@ export class YouTubeDownloader {
           '-S', 'height,tbr,+hdr',
           '-o', outputTemplate,
           youtubeLink,
-          '-N', '32',
+          '-N', '28',
           '--progress',
           '--newline'
         ];
-        
+
         // Set timeout for download (30 minutes for large videos)
         const timeoutMs = 30 * 60 * 1000;
-        
+
         const downloadResult = await this.runYtDlpWithSpawn(args, timeoutMs, onProgress, i, proxies.length);
-        
+
         if (downloadResult.success) {
           const responseTime = Date.now() - startTime;
           logger.info(`yt-dlp download completed with proxy ${i + 1}`, { videoId, responseTime });
-          
+
           // Update proxy log with success
           proxyLog.success = true;
           proxyLog.endTime = new Date().toISOString();
           proxyLog.responseTime = responseTime;
           proxyLogs.push(proxyLog);
           onProxyLog?.(proxyLog);
-          
+
           // Report successful proxy usage
           await proxyService.reportProxyResult(proxy, true, responseTime);
 
-          onProgress?.({ 
-            stage: 'downloading', 
-            percentage: 90, 
-            message: 'Download completed, verifying file...' 
+          onProgress?.({
+            stage: 'downloading',
+            percentage: 90,
+            message: 'Download completed, verifying file...'
           });
 
           // Find the downloaded file
           const files = fs.readdirSync(outputPath);
-          const videoFile = files.find(file => 
-            file.startsWith(`${videoId}-${randomString}`) && 
+          const videoFile = files.find(file =>
+            file.startsWith(`${videoId}-${randomString}`) &&
             !file.endsWith('.part') &&
             !file.endsWith('.ytdl') &&
             !file.endsWith('.temp') &&
@@ -168,16 +168,16 @@ export class YouTubeDownloader {
             throw new Error(`Downloaded file too small: ${stats.size} bytes`);
           }
 
-          onProgress?.({ 
-            stage: 'cleanup', 
-            percentage: 100, 
-            message: 'Download completed successfully' 
+          onProgress?.({
+            stage: 'cleanup',
+            percentage: 100,
+            message: 'Download completed successfully'
           });
 
-          logger.info('YouTube download completed successfully', { 
-            videoId, 
-            fileName: videoFile, 
-            fileSize: stats.size 
+          logger.info('YouTube download completed successfully', {
+            videoId,
+            fileName: videoFile,
+            fileSize: stats.size
           });
 
           return {
@@ -189,7 +189,7 @@ export class YouTubeDownloader {
 
         } else {
           logger.warn(`Download failed with proxy ${i + 1}`, { proxy, error: downloadResult.error, videoId });
-          
+
           // Update proxy log with failure
           proxyLog.success = false;
           proxyLog.endTime = new Date().toISOString();
@@ -197,12 +197,12 @@ export class YouTubeDownloader {
           proxyLog.errorMessage = downloadResult.error || 'Download failed';
           proxyLogs.push(proxyLog);
           onProxyLog?.(proxyLog);
-          
+
           this.cleanupPartialDownloads(videoId, outputPath);
-          
+
           // Report failed proxy usage
           await proxyService.reportProxyResult(proxy, false);
-          
+
           if (i === proxies.length - 1) {
             throw new Error(`All proxies failed for video ${videoId}: ${downloadResult.error}`);
           }
@@ -210,7 +210,7 @@ export class YouTubeDownloader {
 
       } catch (error) {
         logger.warn(`Error with proxy ${i + 1}`, { proxy, error, videoId });
-        
+
         // Update proxy log with error
         proxyLog.success = false;
         proxyLog.endTime = new Date().toISOString();
@@ -218,12 +218,12 @@ export class YouTubeDownloader {
         proxyLog.errorMessage = error instanceof Error ? error.message : String(error);
         proxyLogs.push(proxyLog);
         onProxyLog?.(proxyLog);
-        
+
         this.cleanupPartialDownloads(videoId, outputPath);
-        
+
         // Report failed proxy usage
         await proxyService.reportProxyResult(proxy, false);
-        
+
         if (i === proxies.length - 1) {
           throw new Error(`Failed to download video ${videoId} after trying all proxies`);
         }
@@ -234,8 +234,8 @@ export class YouTubeDownloader {
   }
 
   private async runYtDlpWithSpawn(
-    args: string[], 
-    timeoutMs: number, 
+    args: string[],
+    timeoutMs: number,
     onProgress: ((progress: YouTubeDownloadProgress) => void) | undefined,
     proxyIndex: number,
     totalProxies: number
@@ -255,7 +255,7 @@ export class YouTubeDownloader {
       ytDlp.stdout.on('data', (data) => {
         const output = data.toString();
         stdout += output;
-        
+
         // Parse progress from yt-dlp output
         const progressMatch = output.match(/(\d+\.\d+)%/);
         if (progressMatch) {
@@ -263,7 +263,7 @@ export class YouTubeDownloader {
           if (percentage > lastProgress) {
             lastProgress = percentage;
             const adjustedProgress = 10 + (proxyIndex * 15 / totalProxies) + (percentage * 0.75);
-            
+
             onProgress?.({
               stage: 'downloading',
               percentage: Math.min(adjustedProgress, 89),
@@ -271,7 +271,7 @@ export class YouTubeDownloader {
             });
           }
         }
-        
+
         // Log progress lines for debugging
         if (output.includes('%') || output.includes('Downloading')) {
           logger.debug('yt-dlp progress', { output: output.trim() });
@@ -288,7 +288,7 @@ export class YouTubeDownloader {
       // Handle process exit
       ytDlp.on('close', (code) => {
         clearTimeout(timeoutId);
-        
+
         if (code === 0) {
           logger.info('yt-dlp process completed successfully', { stdout: stdout.slice(-500) });
           resolve({ success: true });
@@ -351,10 +351,10 @@ export class YouTubeDownloader {
           const stats = fs.statSync(filePath);
           if (stats.size < 5 * 1024 * 1024) { // Less than 5MB
             fs.unlinkSync(filePath);
-            logger.debug('Removed suspiciously small file', { 
-              file, 
-              size: stats.size, 
-              videoId 
+            logger.debug('Removed suspiciously small file', {
+              file,
+              size: stats.size,
+              videoId
             });
           }
         } catch (error) {
