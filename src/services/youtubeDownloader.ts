@@ -122,6 +122,50 @@ export class YouTubeDownloader {
         });
 
         logger.info(`Attempting download with proxy ${i + 1}/${proxies.length}`, { proxy, videoId });
+        
+        // Pre-fetch format information for better tracking
+        let preSelectedQuality: any = {};
+        try {
+          const formatInfoArgs = [
+            '--proxy', proxy,
+            '-f', 'bv*[height<=1080][vcodec!*=vp09.02][vcodec!*=av01][dynamic_range!=HDR][dynamic_range!=HDR10][dynamic_range!=HDR12]+ba/b[height<=1080][dynamic_range!=HDR]',
+            '--print', '%(format_id)s|%(resolution)s|%(fps)s|%(vcodec)s|%(acodec)s|%(format_note)s',
+            youtubeLink,
+          ];
+          
+          const { stdout: formatInfo } = await new Promise<{ stdout: string; stderr: string }>((resolve) => {
+            const child = spawn('yt-dlp', formatInfoArgs);
+            let stdout = '';
+            let stderr = '';
+            
+            child.stdout.on('data', (data) => stdout += data.toString());
+            child.stderr.on('data', (data) => stderr += data.toString());
+            
+            child.on('close', () => resolve({ stdout: stdout.trim(), stderr }));
+            
+            // Timeout after 5 seconds
+            setTimeout(() => {
+              child.kill();
+              resolve({ stdout: stdout.trim(), stderr: 'Timeout' });
+            }, 5000);
+          });
+          
+          if (formatInfo) {
+            const parts = formatInfo.split('|');
+            if (parts.length >= 5) {
+              preSelectedQuality = {
+                format: parts[0] || undefined,
+                resolution: parts[1] !== 'NA' ? parts[1] : undefined,
+                fps: parts[2] !== 'NA' && parts[2] ? parseInt(parts[2]) : undefined,
+                videoCodec: parts[3] !== 'NA' ? parts[3] : undefined,
+                audioCodec: parts[4] !== 'NA' ? parts[4] : undefined,
+              };
+              logger.debug('Pre-fetched format info', { preSelectedQuality, videoId });
+            }
+          }
+        } catch (error) {
+          logger.debug('Failed to pre-fetch format info, continuing with download', { error, videoId });
+        }
 
         // Use spawn instead of exec to handle large downloads
         const args: string[] = [
@@ -138,7 +182,7 @@ export class YouTubeDownloader {
         // Set timeout for download (30 minutes for large videos)
         const timeoutMs = 30 * 60 * 1000;
 
-        const downloadResult = await this.runYtDlpWithSpawn(args, timeoutMs, onProgress, i, proxies.length);
+        const downloadResult = await this.runYtDlpWithSpawn(args, timeoutMs, onProgress, i, proxies.length, preSelectedQuality);
 
         if (downloadResult.success) {
           // Store the selected quality info
@@ -257,14 +301,15 @@ export class YouTubeDownloader {
     timeoutMs: number,
     onProgress: ((progress: YouTubeDownloadProgress) => void) | undefined,
     proxyIndex: number,
-    totalProxies: number
+    totalProxies: number,
+    preSelectedQuality?: any
   ): Promise<{ success: boolean; error?: string; selectedQuality?: any }> {
     return new Promise((resolve) => {
       const ytDlp = spawn('yt-dlp', args);
       let stdout = '';
       let stderr = '';
       let lastProgress = 0;
-      let selectedQuality: any = {};
+      let selectedQuality: any = preSelectedQuality || {};
       // Set timeout
       const timeoutId = setTimeout(() => {
         ytDlp.kill('SIGTERM');
@@ -294,45 +339,58 @@ export class YouTubeDownloader {
         }
 
         // Parse quality information from yt-dlp output
-        // Look for format selection lines
-        if (output.includes('[info] ') && output.includes('format:')) {
-          const formatMatch = output.match(/\[info\].*?format:\s*([^\s]+)/);
+        // NEW: Look for format IDs in the new output format
+        if (output.includes('[info]') && output.includes('Downloading') && output.includes('format(s):')) {
+          const formatMatch = output.match(/Downloading \d+ format\(s\): ([\d\+]+)/);
           if (formatMatch) {
             selectedQuality.format = formatMatch[1];
+            logger.debug('Captured format IDs', { format: formatMatch[1] });
           }
         }
         
-        // Parse resolution, fps, and codec info
-        if (output.includes('[info] ') && output.includes('x')) {
-          const resMatch = output.match(/(\d+)x(\d+)/);
+        // Parse resolution from download progress lines
+        if (output.includes('[download]') && output.includes('Destination:')) {
+          // Try to extract resolution from filename or path
+          const resMatch = output.match(/(\d{3,4})x(\d{3,4})/);
           if (resMatch) {
             selectedQuality.resolution = `${resMatch[2]}p`;
           }
-          
-          const fpsMatch = output.match(/(\d+)fps/);
-          if (fpsMatch) {
-            selectedQuality.fps = parseInt(fpsMatch[1]);
-          }
-          
-          const vcodecMatch = output.match(/vcodec[=:]([^,\s]+)/);
-          if (vcodecMatch) {
-            selectedQuality.videoCodec = vcodecMatch[1];
-          }
-          
-          const acodecMatch = output.match(/acodec[=:]([^,\s]+)/);
-          if (acodecMatch) {
-            selectedQuality.audioCodec = acodecMatch[1];
+        }
+        
+        // Parse from merger output (when merging video + audio)
+        if (output.includes('[Merger]') && output.includes('Merging formats into')) {
+          const resMatch = output.match(/(\d{3,4})x(\d{3,4})/);
+          if (resMatch) {
+            selectedQuality.resolution = `${resMatch[2]}p`;
           }
         }
         
-        // Alternative format parsing for download lines
-        if (output.includes('[download] Downloading') || output.includes('[Merger]')) {
-          const formatInfoMatch = output.match(/\[(\d+p)(\d+)?\]/);
-          if (formatInfoMatch) {
-            selectedQuality.resolution = formatInfoMatch[1];
-            if (formatInfoMatch[2]) {
-              selectedQuality.fps = parseInt(formatInfoMatch[2]);
-            }
+        // Try to parse format details from any line containing resolution
+        if (output.match(/\d{3,4}x\d{3,4}/)) {
+          const resMatch = output.match(/(\d{3,4})x(\d{3,4})/);
+          if (resMatch && !selectedQuality.resolution) {
+            selectedQuality.resolution = `${resMatch[2]}p`;
+          }
+          
+          // Also try to get FPS if it appears nearby
+          const fpsMatch = output.match(/(\d+)fps/i);
+          if (fpsMatch && !selectedQuality.fps) {
+            selectedQuality.fps = parseInt(fpsMatch[1]);
+          }
+        }
+        
+        // Parse codec information if available
+        if (output.includes('vp09') || output.includes('avc1') || output.includes('av01')) {
+          const vcodecMatch = output.match(/(vp09|avc1|av01)[\.\d]*/i);
+          if (vcodecMatch && !selectedQuality.videoCodec) {
+            selectedQuality.videoCodec = vcodecMatch[0];
+          }
+        }
+        
+        if (output.includes('opus') || output.includes('mp4a') || output.includes('aac')) {
+          const acodecMatch = output.match(/(opus|mp4a|aac)[\.\d]*/i);
+          if (acodecMatch && !selectedQuality.audioCodec) {
+            selectedQuality.audioCodec = acodecMatch[0];
           }
         }
         
