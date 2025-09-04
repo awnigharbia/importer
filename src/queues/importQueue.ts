@@ -21,6 +21,14 @@ export interface ImportJobResult {
   error?: string;
   retryCount?: number;
   proxyLogs?: ProxyLog[];
+  selectedQuality?: {
+    resolution?: string;
+    fps?: number;
+    videoCodec?: string;
+    audioCodec?: string;
+    bitrate?: string;
+    format?: string;
+  };
 }
 
 export interface ProxyLog {

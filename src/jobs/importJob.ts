@@ -259,6 +259,7 @@ export async function processImportJob(
       fileSize: uploadResult.fileSize,
       retryCount: job.attemptsMade,
       ...(proxyLogs && proxyLogs.length > 0 ? { proxyLogs } : {}),
+      ...(type === 'youtube' && 'selectedQuality' in downloadResult && downloadResult.selectedQuality ? { selectedQuality: downloadResult.selectedQuality } : {}),
     };
 
     // Send success notification

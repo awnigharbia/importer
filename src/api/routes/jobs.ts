@@ -60,6 +60,12 @@ router.get('/jobs', async (req, res, next) => {
           proxyLogs = job.returnvalue.proxyLogs;
         }
         
+        // Get selected quality from return value (for YouTube downloads)
+        let selectedQuality = undefined;
+        if (job.returnvalue?.selectedQuality) {
+          selectedQuality = job.returnvalue.selectedQuality;
+        }
+        
         return {
           id: job.id,
           data: job.data,
@@ -72,6 +78,7 @@ router.get('/jobs', async (req, res, next) => {
           processedOn: job.processedOn,
           finishedOn: job.finishedOn,
           proxyLogs,
+          selectedQuality,
         };
       })
     );
@@ -116,6 +123,12 @@ router.get('/jobs/:id', async (req, res, next) => {
       proxyLogs = job.returnvalue.proxyLogs;
     }
 
+    // Get selected quality from return value (for YouTube downloads)
+    let selectedQuality = undefined;
+    if (job.returnvalue?.selectedQuality) {
+      selectedQuality = job.returnvalue.selectedQuality;
+    }
+
     res.json({
       success: true,
       data: {
@@ -132,6 +145,7 @@ router.get('/jobs/:id', async (req, res, next) => {
         finishedOn: job.finishedOn,
         logs: logs.logs,
         proxyLogs,
+        selectedQuality,
       },
     });
   } catch (error) {

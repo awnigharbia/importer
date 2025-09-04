@@ -26,6 +26,14 @@ export interface YouTubeDownloadResult {
   fileName: string;
   fileSize: number;
   videoId: string;
+  selectedQuality?: {
+    resolution?: string;
+    fps?: number;
+    videoCodec?: string;
+    audioCodec?: string;
+    bitrate?: string;
+    format?: string;
+  };
 }
 
 
@@ -125,6 +133,8 @@ export class YouTubeDownloader {
         const downloadResult = await this.runYtDlpWithSpawn(args, timeoutMs, onProgress, i, proxies.length);
 
         if (downloadResult.success) {
+          // Store the selected quality info
+          const selectedQuality = downloadResult.selectedQuality || {};
           const responseTime = Date.now() - startTime;
           logger.info(`yt-dlp download completed with proxy ${i + 1}`, { videoId, responseTime });
 
@@ -184,7 +194,8 @@ export class YouTubeDownloader {
             filePath,
             fileName: videoFile,
             fileSize: stats.size,
-            videoId
+            videoId,
+            selectedQuality: Object.keys(selectedQuality).length > 0 ? selectedQuality : undefined
           };
 
         } else {
@@ -239,12 +250,13 @@ export class YouTubeDownloader {
     onProgress: ((progress: YouTubeDownloadProgress) => void) | undefined,
     proxyIndex: number,
     totalProxies: number
-  ): Promise<{ success: boolean; error?: string }> {
+  ): Promise<{ success: boolean; error?: string; selectedQuality?: any }> {
     return new Promise((resolve) => {
       const ytDlp = spawn('yt-dlp', args);
       let stdout = '';
       let stderr = '';
       let lastProgress = 0;
+      let selectedQuality: any = {};
       // Set timeout
       const timeoutId = setTimeout(() => {
         ytDlp.kill('SIGTERM');
@@ -272,6 +284,49 @@ export class YouTubeDownloader {
           }
         }
 
+        // Parse quality information from yt-dlp output
+        // Look for format selection lines
+        if (output.includes('[info] ') && output.includes('format:')) {
+          const formatMatch = output.match(/\[info\].*?format:\s*([^\s]+)/);
+          if (formatMatch) {
+            selectedQuality.format = formatMatch[1];
+          }
+        }
+        
+        // Parse resolution, fps, and codec info
+        if (output.includes('[info] ') && output.includes('x')) {
+          const resMatch = output.match(/(\d+)x(\d+)/);
+          if (resMatch) {
+            selectedQuality.resolution = `${resMatch[2]}p`;
+          }
+          
+          const fpsMatch = output.match(/(\d+)fps/);
+          if (fpsMatch) {
+            selectedQuality.fps = parseInt(fpsMatch[1]);
+          }
+          
+          const vcodecMatch = output.match(/vcodec[=:]([^,\s]+)/);
+          if (vcodecMatch) {
+            selectedQuality.videoCodec = vcodecMatch[1];
+          }
+          
+          const acodecMatch = output.match(/acodec[=:]([^,\s]+)/);
+          if (acodecMatch) {
+            selectedQuality.audioCodec = acodecMatch[1];
+          }
+        }
+        
+        // Alternative format parsing for download lines
+        if (output.includes('[download] Downloading') || output.includes('[Merger]')) {
+          const formatInfoMatch = output.match(/\[(\d+p)(\d+)?\]/);
+          if (formatInfoMatch) {
+            selectedQuality.resolution = formatInfoMatch[1];
+            if (formatInfoMatch[2]) {
+              selectedQuality.fps = parseInt(formatInfoMatch[2]);
+            }
+          }
+        }
+        
         // Log progress lines for debugging
         if (output.includes('%') || output.includes('Downloading')) {
           logger.debug('yt-dlp progress', { output: output.trim() });
@@ -290,8 +345,8 @@ export class YouTubeDownloader {
         clearTimeout(timeoutId);
 
         if (code === 0) {
-          logger.info('yt-dlp process completed successfully', { stdout: stdout.slice(-500) });
-          resolve({ success: true });
+          logger.info('yt-dlp process completed successfully', { stdout: stdout.slice(-500), selectedQuality });
+          resolve({ success: true, selectedQuality });
         } else {
           const errorMessage = stderr || stdout || `Process exited with code ${code}`;
           logger.error('yt-dlp process failed', { code, stderr, stdout: stdout.slice(-500) });
