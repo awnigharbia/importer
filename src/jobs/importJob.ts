@@ -67,6 +67,7 @@ export async function processImportJob(
             percentage: progress.percentage,
             message: progress.message,
             proxyLogs,
+            ...(progress.selectedQuality ? { selectedQuality: progress.selectedQuality } : {}),
           } as ImportJobProgress);
         },
         onProxyLog: (log) => {

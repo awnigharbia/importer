@@ -48,6 +48,14 @@ export interface ImportJobProgress {
   percentage: number;
   message: string;
   proxyLogs?: ProxyLog[];
+  selectedQuality?: {
+    resolution?: string;
+    fps?: number;
+    videoCodec?: string;
+    audioCodec?: string;
+    bitrate?: string;
+    format?: string;
+  };
 }
 
 let importQueue: Queue<ImportJobData, ImportJobResult> | null = null;

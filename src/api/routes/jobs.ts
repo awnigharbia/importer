@@ -60,10 +60,12 @@ router.get('/jobs', async (req, res, next) => {
           proxyLogs = job.returnvalue.proxyLogs;
         }
         
-        // Get selected quality from return value (for YouTube downloads)
+        // Get selected quality from progress or return value (for YouTube downloads)
         let selectedQuality = undefined;
         if (job.returnvalue?.selectedQuality) {
           selectedQuality = job.returnvalue.selectedQuality;
+        } else if (typeof job.progress === 'object' && job.progress && 'selectedQuality' in job.progress) {
+          selectedQuality = (job.progress as any).selectedQuality;
         }
         
         return {
@@ -123,10 +125,12 @@ router.get('/jobs/:id', async (req, res, next) => {
       proxyLogs = job.returnvalue.proxyLogs;
     }
 
-    // Get selected quality from return value (for YouTube downloads)
+    // Get selected quality from progress or return value (for YouTube downloads)
     let selectedQuality = undefined;
     if (job.returnvalue?.selectedQuality) {
       selectedQuality = job.returnvalue.selectedQuality;
+    } else if (typeof job.progress === 'object' && job.progress && 'selectedQuality' in job.progress) {
+      selectedQuality = (job.progress as any).selectedQuality;
     }
 
     res.json({

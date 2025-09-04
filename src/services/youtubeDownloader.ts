@@ -19,6 +19,14 @@ export interface YouTubeDownloadProgress {
   stage: 'downloading' | 'cleanup';
   percentage: number;
   message: string;
+  selectedQuality?: {
+    resolution?: string;
+    fps?: number;
+    videoCodec?: string;
+    audioCodec?: string;
+    bitrate?: string;
+    format?: string;
+  };
 }
 
 export interface YouTubeDownloadResult {
@@ -279,7 +287,8 @@ export class YouTubeDownloader {
             onProgress?.({
               stage: 'downloading',
               percentage: Math.min(adjustedProgress, 89),
-              message: `Downloading: ${percentage.toFixed(1)}%`
+              message: `Downloading: ${percentage.toFixed(1)}%`,
+              ...(Object.keys(selectedQuality).length > 0 ? { selectedQuality } : {})
             });
           }
         }
