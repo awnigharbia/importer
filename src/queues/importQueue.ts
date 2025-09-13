@@ -11,6 +11,7 @@ export interface ImportJobData {
   fileName?: string | undefined;
   requestId: string;
   videoId?: string; // For TUS uploads, the pre-created video ID
+  apiKey?: string; // API key for encode-admin authentication
 }
 
 export interface ImportJobResult {

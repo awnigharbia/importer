@@ -53,6 +53,7 @@ export function createTusServer(): Server {
 
         let videoId: string | undefined;
         let originalFileName: string | undefined;
+        let apiKey: string | undefined;
         
         if (upload.metadata) {
           // Extract video ID if present
@@ -68,6 +69,16 @@ export function createTusServer(): Server {
             logger.warn('No video-id found in upload metadata', {
               uploadId: upload.id,
               availableMetadata: Object.keys(upload.metadata || {}),
+            });
+          }
+          
+          // Extract API key if present for encode-admin authentication
+          if (upload.metadata['api-key']) {
+            apiKey = upload.metadata['api-key'];
+            logger.info('Extracted API key from upload metadata', {
+              uploadId: upload.id,
+              hasApiKey: true,
+              apiKeyLength: apiKey.length,
             });
           }
           
@@ -91,6 +102,7 @@ export function createTusServer(): Server {
           fileName: uploadFileName,
           requestId: `tus-${upload.id}-${Date.now()}`,
           ...(videoId && { videoId }),
+          ...(apiKey && { apiKey }),
         };
 
         await addImportJob(jobData);

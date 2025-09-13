@@ -38,14 +38,18 @@ export class EncodeAdminService {
   private apiUrl: string;
   private apiKey: string;
 
-  constructor() {
+  constructor(apiKey?: string) {
     this.apiUrl = env.ENCODE_ADMIN_API_URL || 'https://encode-admin.fly.dev/api';
-    this.apiKey = env.ENCODE_ADMIN_API_KEY || 'e9aaae3945ba3937b04feeb14de0c407';
+    // Use provided API key, or fall back to env variable, or default
+    this.apiKey = apiKey || env.ENCODE_ADMIN_API_KEY || 'e9aaae3945ba3937b04feeb14de0c407';
     
     logger.info('EncodeAdminService initialized', {
       apiUrl: this.apiUrl,
       hasApiKey: !!this.apiKey,
       apiKeyLength: this.apiKey ? this.apiKey.length : 0,
+      isProvidedKey: !!apiKey,
+      isEnvKey: !apiKey && !!env.ENCODE_ADMIN_API_KEY,
+      isDefaultKey: !apiKey && !env.ENCODE_ADMIN_API_KEY,
     });
   }
 

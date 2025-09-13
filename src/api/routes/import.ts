@@ -32,6 +32,16 @@ router.post('/import', async (req, res, next) => {
       videoId = req.headers['video-id'] as string;
     }
 
+    // Check for api-key in headers for encode-admin authentication
+    let apiKey: string | undefined;
+    if (req.headers['api-key']) {
+      apiKey = req.headers['api-key'] as string;
+      logger.info('API key provided in request headers', {
+        hasApiKey: true,
+        apiKeyLength: apiKey.length,
+      });
+    }
+
     // Auto-detect type if not provided
     if (!type) {
       if (isGoogleDriveUrl(url)) {
@@ -52,6 +62,7 @@ router.post('/import', async (req, res, next) => {
         videoId,
         type,
         url,
+        hasApiKey: !!apiKey,
       });
     }
     
@@ -61,6 +72,7 @@ router.post('/import', async (req, res, next) => {
       fileName: fileName || undefined,
       requestId,
       ...(videoId && { videoId }),
+      ...(apiKey && { apiKey }),
     });
 
     res.status(201).json({

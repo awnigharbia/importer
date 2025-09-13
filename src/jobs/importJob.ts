@@ -16,12 +16,12 @@ import { getMemoryMonitor } from '../utils/memoryMonitor';
 export async function processImportJob(
   job: Job<ImportJobData, ImportJobResult>
 ): Promise<ImportJobResult> {
-  const { url, type, fileName, videoId } = job.data;
+  const { url, type, fileName, videoId, apiKey } = job.data;
   const downloader = new Downloader();
   const googleDriveDownloader = new GoogleDriveDownloader();
   const youtubeDownloader = new YouTubeDownloader();
   const bunnyStorage = new BunnyStorage();
-  const encodeAdminService = new EncodeAdminService();
+  const encodeAdminService = new EncodeAdminService(apiKey);
   const recoveryService = getJobRecoveryService();
   const memoryMonitor = getMemoryMonitor();
 
